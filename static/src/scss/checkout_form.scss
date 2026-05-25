@@ -1,0 +1,33 @@
+.checkout_autoformat {
+
+  .form-group {
+    margin-bottom: 0.6rem;
+
+    label {
+      font-weight: unset;
+
+      &.col-form-label {
+        font-size: 0.8rem;
+        padding-top: unset;
+        padding-bottom: unset;
+      }
+    }
+
+    .form-control {
+      padding: 0.1rem 0rem;
+      height: unset;
+      border: none;
+      border-bottom: 1px solid lightgray;
+      border-radius: unset;
+
+      &:focus {
+        border-bottom: 1px solid black;
+        box-shadow: none;
+      }
+
+      &.is-invalid {
+        border-color: $danger;
+      }
+    }
+  }
+}

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <!-- Custom SaaS Category -->
+ 
+
+    <!-- SaaS User UoM -->
+    <record id="product_uom_saas_user_month" model="uom.uom">
+        <field name="name">User</field>
+        <field name="factor" eval="1.0"/>
+        <field name="rounding" eval="1.0"/>
+        <field name="active" eval="True"/>
+    </record>
+    
+    <!-- SaaS App UoM -->
+    <record id="product_uom_saas_app_month" model="uom.uom">
+        <field name="name">App</field>
+        <field name="factor" eval="1.0"/>
+        <field name="rounding" eval="1.0"/>
+        <field name="active" eval="True"/>
+    </record>
+
+    <!-- Product definition using SaaS App UoM -->
+    <record id="product_app_mail" model="product.template">
+        <field name="name">Discuss</field>
+        <field name="can_be_user_app" eval="True"/>
+        <field name="type">service</field>
+        <field name="uom_id" ref="product_uom_saas_app_month"/>
+        <field name="default_code">mail</field>
+        <field name="technical_name">mail</field>
+        <field name="ecom_category_id" ref="product_public_category_tool"/>
+        <field name="image_1920" type="base64" file="s_odoo_saas_master/static/src/img/mail.png"/>
+        <field name="is_published" eval="True"/>
+    </record>
+
+</odoo>

@@ -1,0 +1,396 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+	<template id="portal_my_home_menu_instance" name="Portal layout : instance menu entries" inherit_id="portal.portal_breadcrumbs" priority="30">
+        <xpath expr="//ol[hasclass('o_portal_submenu')]" position="inside">
+            <li t-attf-class="breadcrumb-item #{'active ' if not instance else ''}">
+                <a t-if="instance" t-attf-href="/my/saas/odoo-instances?{{ keep_query() }}">Instances</a>
+                <t t-else="">Instances</t>
+            </li>
+        </xpath>
+    </template>
+	
+	<template id="portal_my_home_instance" name="Show Odoo Instance" inherit_id="portal.portal_my_home" customize_show="True" priority="40">
+        <xpath expr="//div[hasclass('o_portal_docs')]" position="before">
+            <t t-set="portal_client_category_enable" t-value="True"/>
+        </xpath>
+        <div id="portal_client_category" position="inside">
+            <t t-call="portal.portal_docs_entry">
+                <t t-set="icon" t-value="'/s_odoo_saas_master/static/src/img/SaaSLogo.png'"/>
+                <t t-set="title">Your Instances</t>
+                <t t-set="url" t-value="'/my/saas/odoo-instances'"/>
+                <t t-set="text">Tracking, control your instances</t>
+                <t t-set="config_card" t-value="True"/>
+                <t t-set="placeholder_count" t-value="'instance_count'"/>
+            </t>
+        </div>
+    </template>
+    
+    <template id="portal_my_instances" name="My Instances">
+    	<t t-call="portal.portal_layout">
+    		<t t-set="breadcrumbs_searchbar" t-value="True"/>
+    		
+    		<t t-call="portal.portal_searchbar">
+    			<t t-set="title">Instances</t>
+    		</t>
+            
+            <t t-if="not instances">
+	            <p class="alert alert-warning">There are currently no instances for your account.</p>
+	        </t>
+	        
+	        <t t-if="instances" t-call="portal.portal_table">
+	        	<thead>
+	                <tr class="active">
+	                    <th>Instance Name</th>
+	                    <th>Create Date</th>
+	                    <th>Expiration Date</th>
+	                    <th>Operation Status</th>
+	                    <th>Status</th>
+	                    <th/>
+	                </tr>
+	            </thead>
+	            <tbody>
+                	<t t-foreach="instances" t-as="instance">
+                		<tr>
+                			<td>
+	                            <a t-att-href="instance.get_portal_url()" t-att-title="instance.name">
+	                                <t t-esc="instance.name"/>
+	                            </a>
+	                            <span t-if="instance.trial" class="badge badge-pill badge-info"><span>Trial</span></span>
+	                        </td>
+	                        <td><span t-field="instance.create_date"/></td>
+	                        <td class='d-none d-md-table-cell'><span t-field="instance.expiration_date"/></td>
+	                        <td class="tx_status">
+	                            <t t-if="instance.state == 'draft'">
+	                                <span class="badge rounded-pill text-bg-info"><i class="fa fa-fw fa-circle-o" aria-label="Draft" title="Draft" role="img"></i><span class="d-none d-md-inline"> Draft</span></span>
+	                            </t>
+	                            <t t-if="instance.state == 'deploy'">
+	                                <span class="badge rounded-pill text-bg-success"><i class="fa fa-fw fa-check" aria-label="Deployed" title="Deployed" role="img"></i><span class="d-none d-md-inline"> Deployed</span></span>
+	                            </t>
+	                            <t t-if="instance.state == 'suspend'">
+	                                <span class="badge rounded-pill text-bg-danger"><i class="fa fa-fw fa-clock-o" aria-label="Suspended" title="Suspended" role="img"></i><span class="d-none d-md-inline"> Suspended</span></span>
+	                            </t>
+	                            <t t-if="instance.state == 'cancel'">
+	                                <span class="badge rounded-pill text-bg-dark"><i class="fa fa-fw fa-close" aria-label="Cancelled" title="Cancelled" role="img"></i><span class="d-none d-md-inline"> Cancelled</span></span>
+	                            </t>
+	                        </td>
+	                        <td>
+	                        	<t t-if="instance.operation_state == 'run'">
+	                                <span class="badge rounded-pill text-bg-primary"><i class="fa fa-fw fa-play" aria-label="Running" title="Running" role="img"></i><span class="d-none d-md-inline"> Running</span></span>
+	                            </t>
+	                            <t t-elif="instance.operation_state == 'stop'">
+	                                <span class="badge rounded-pill text-bg-danger"><i class="fa fa-fw fa-stop" aria-label="Stopped" title="Stopped" role="img"></i><span class="d-none d-md-inline"> Stopped</span></span>
+	                            </t>
+	                        </td>
+	                        <td></td>
+                		</tr>
+                	</t>
+                </tbody>
+	        </t>
+    	</t>
+    </template>
+    
+    <template id="portal_record_sidebar" name="Instance Portal Record Sidebar">
+        <div t-attf-class="#{classes}">
+            <div class="card bg-white mb-4 sticky-top" id="sidebar_content">
+                <div t-if="trial" class="ribbon-corner">
+                    <span class="font-weight-bold">Trial</span>
+                </div>
+                <div t-if="title" class="card-body text-center pb-2 pt-3">
+                    <t t-out="title"/>
+                </div>
+                <t t-if="entries" t-out="entries"/>
+            </div>
+        </div>
+    </template>
+    
+    <template id="portal_instance_page" name="Instance Portal Template" inherit_id="portal.portal_sidebar" primary="True">
+        <xpath expr="//div[hasclass('o_portal_sidebar')]" position="inside">
+            <div class="row mt16 o_portal_instance_sidebar">
+                <!-- Sidebar -->
+                <t t-call="s_odoo_saas_master.portal_record_sidebar">
+                    <t t-set="trial" t-value="instance.trial"/>
+                    <t t-set="buy_now_from_pricing" t-value="'on' if instance.buy_now_from_pricing else 'off'"/>
+                    <t t-set="classes" t-value="'col-lg-auto d-print-none'"/>
+                    <t t-set="title">
+                        <div class="d-inline-block">
+                        	<h4 class="d-none o_need_to_deploy" t-att-data-need_to_deploy="buy_now_from_pricing" id="o_need_to_deploy"/>
+                            <h4 class="mb-0 d-inline o_instance_name" t-att-data-instance_id="instance.id" id="o_instance_name">
+                                <b t-field="instance.name"/>
+                            </h4>
+                            <h5 class="d-inline" >.</h5>
+                            <h5 class="d-inline" t-field="instance.based_domain_id"/>
+                        </div>
+                    </t>
+                    <t t-set="entries">
+                        <div class="px-3 pt-2 border-top border-left">
+                            <table class="table table-sm table-borderless">
+                              <tbody>
+                                <tr>
+                                  <td>Created on</td>
+                                  <td><b t-field="instance.create_date"/></td>
+                                </tr>
+                                <tr>
+                                  <td>Expires on</td>
+                                  <td><b t-field="instance.expiration_date"/></td>
+                                </tr>
+                                <tr class="fw-bold">
+                                  <td>Active Users</td>
+                                  <td><span t-field="instance.active_user"/> / <span t-field="instance.paid_user"/></td>
+                                </tr>
+                                <tr>
+                                  <td>Status</td>
+                                  <td>
+                                    <t t-if="instance.state == 'draft'">
+                                        <span class="badge rounded-pill text-bg-info"><i class="fa fa-fw fa-circle-o" aria-label="Draft" title="Draft" role="img"></i><span class="d-none d-md-inline"> Draft</span></span>
+                                    </t>
+                                    <t t-if="instance.state == 'deploy'">
+                                        <span class="badge rounded-pill text-bg-success"><i class="fa fa-fw fa-check" aria-label="Deployed" title="Deployed" role="img"></i><span class="d-none d-md-inline"> Deployed</span></span>
+                                    </t>
+                                    <t t-if="instance.state == 'suspend'">
+                                        <span class="badge rounded-pill text-bg-danger"><i class="fa fa-fw fa-clock-o" aria-label="Suspended" title="Suspended" role="img"></i><span class="d-none d-md-inline"> Suspended</span></span>
+                                    </t>
+                                    <t t-if="instance.state == 'cancel'">
+                                        <span class="badge rounded-pill text-bg-dark"><i class="fa fa-fw fa-close" aria-label="Cancelled" title="Cancelled" role="img"></i><span class="d-none d-md-inline"> Cancelled</span></span>
+                                    </t>
+                                  </td>
+                                </tr>
+                                <tr>
+                                  <td>Operation Status</td>
+                                  <td class="o_instance_operation_state" t-att-data-operation_state="instance.operation_state">
+                                    <t t-if="instance.operation_state == 'run'">
+                                        <span class="badge rounded-pill text-bg-primary"><i class="fa fa-fw fa-play" aria-label="Running" title="Running" role="img"></i><span class="d-none d-md-inline"> Running</span></span>
+                                    </t>
+                                    <t t-elif="instance.operation_state == 'stop'">
+                                        <span class="badge rounded-pill text-bg-danger"><i class="fa fa-fw fa-stop" aria-label="Stopped" title="Stopped" role="img"></i><span class="d-none d-md-inline"> Stopped</span></span>
+                                    </t>
+                                  </td>
+                                </tr>
+                              </tbody>
+                            </table>
+                        </div>
+
+                        <ul class="list-group list-group-flush flex-wrap flex-row flex-lg-column">
+                            <li class="list-group-item flex-grow-1">
+                                <div class="mx-1 mb8">
+                                    <a t-if="instance.state == 'deploy'" class="btn btn-primary btn-block" t-attf-href="{{ instance.url }}" target="_blank">
+                                        <i class="fa fa-fw fa-plug"/> Connect
+                                    </a>
+                                </div>
+                                <div class="btn-toolbar flex-sm-nowrap">
+                                    <div class="btn-group flex-grow-1 mx-1">
+                                        <a class="btn btn-block btn-success o_instance_start" t-att-data-instance_id="instance.id" href="#" title="Start"><i class="fa fa-fw fa-play"/> Start</a>
+                                    </div>
+                                    <div t-if="instance.operation_state == 'run' and instance.state == 'deploy'" class="btn-group flex-grow-1 mx-1">
+                                        <a class="btn btn-block btn-danger o_instance_stop" t-att-data-instance_id="instance.id" href="#" title="Stop"><i class="fa fa-fw fa-stop"/> Stop</a>
+                                    </div>
+                                    <div t-if="instance.operation_state == 'run' and instance.state == 'deploy'" class="btn-group flex-grow-1 mx-1">
+                                        <a class="btn btn-block btn-warning o_instance_restart" t-att-data-instance_id="instance.id" href="#" title="Restart"><i class="fa fa-fw fa-refresh"/> Restart</a>
+                                    </div>
+                                </div>
+                            </li>
+
+                            <li class="list-group-item flex-grow-1">
+                                <div t-if="instance.state != 'new' and instance.backup_ids">
+                                    <a class="btn btn-link" t-attf-href="/my/instance/{{instance.id}}/download-backup" title="Download Lastest Backup"><i class="fa fa-fw fa-download"/> Download latest backup</a>
+                                </div>
+                                <div t-if="instance.state in ['suspend','deploy']">
+                                    <a class="btn btn-link o_instance_create_backup" t-att-data-instance_id="instance.id" href="#" title="Create Backup"><i class="fa fa-fw fa-database"/> Create backup</a>
+                                </div>
+                            </li>
+                        </ul>
+                        <div class="px-3 pt-2 border-top border-left">
+                        	<h4 class="text-center">Add your domain name</h4>
+                        </div>
+                        <div class="px-3 pt-2 border-top border-left">
+                        	<div style="width: 14rem;" class="mb-3 text-secondary text-wrap">
+                        		You need to point your domain to IP address <span class="text-primary fw-bold" t-esc="managing_ip" />
+                        	</div>                        	
+                        	<div style="width: 14rem;" class="mb-3 text-secondary text-wrap">
+                        		Or set cname record of your domain is <span class="text-primary fw-bold" t-esc="instance.based_domain_id.name" />
+                        	</div>
+                        	<div class="input-group mb-3">							  
+							  <input type="text" id="domain_name" class="form-control" placeholder="your-domain.com" aria-label="Your domain name" />
+							  <a class="btn btn-primary btn-block o_instance_add_custom_domain" t-att-data-instance_id="instance.id" href="#" title="Add your domain name"><i class="fa fa-fw fa-hand-o-down"/> Add</a>
+							</div>
+                        </div>
+                        <div class="px-3 pt-2 border-top border-left" id="domain_list">
+                        	<ul>
+                        		<li class="pb-1" t-foreach="instance.domain_name_ids" t-as="domain_name" t-if="not domain_name.is_instance_domain_name">
+                                    <span>
+                                    	<a t-att-class="'text-success' if domain_name.state == 'deploy' else 'text-danger'"
+                                    		t-att-title="'Your domain cannot verify' if domain_name.state != 'deploy' else ''"
+                                    		href="#">
+                                    		<span t-esc="domain_name.name"/>
+                                    	</a>
+                                    </span>
+                                    <a class="btn btn-sm btn-link o_instance_domain_name_remove" t-att-data-domain_name_id="domain_name.id" href="#" title="Remove your domain"><i class="fa fa-fw fa-trash"/></a>
+                                </li>
+                        	</ul>
+                        </div>
+                    </t>
+                </t>
+
+                <!-- Page Content -->
+                <div id="instance_content" class="col-12 col-lg">
+                    <div class="card mb-4">
+                        <div class="card-body">
+                            <h3 class="card-title">Installed Apps</h3><a class="btn btn-success o_instance_get_app" t-att-data-instance_id="instance.id" href="#">Get Apps</a>
+                            <p class="text-muted">
+                                The system will update your active users and apps periodically or you can click the 
+                                Get Apps buttons to update your installed apps and active users immediately.                                
+                            </p>
+                            <div class="row">
+                                <t t-foreach="installed_apps" t-as="app">
+                                    <div class="col-6 col-sm-4 col-lg-3 text-center">
+                                        <label class="p-2 mb-2 w100">
+                                            <div class="mx-auto" style="max-width: 50px">
+                                                <img class="img-fluid" t-att-src="image_data_uri(app.image_256)" loading="lazy"/>
+                                            </div>
+                                            <div class="">
+                                                <t t-esc="app.name"/>
+                                            </div>
+                                        </label>
+                                    </div>
+                                </t>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card mb-4" t-if="instance.not_paid_app_count">
+                        <div class="card-body">
+                            <h3 class="card-title text-danger">Not Paid Apps</h3>
+                            <div class="row">
+                                <t t-foreach="installed_apps" t-as="app">
+                                    <div class="col-6 col-sm-4 col-lg-3 text-center" t-if="app.not_paid">
+                                        <label class="p-2 mb-2 w100">
+                                            <div class="mx-auto" style="max-width: 50px">
+                                                <img class="img-fluid" t-att-src="image_data_uri(app.image_256)" loading="lazy"/>
+                                            </div>
+                                            <div class="">
+                                                <t t-esc="app.name"/>
+                                            </div>
+                                        </label>
+                                    </div>
+                                </t>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card mb-4">
+                        <div class="card-body">
+                            <h3 class="card-title">Backups</h3>
+                            <div class="d-flex flex-column bd-highlight">
+                                <p t-if="not instance.backup_ids" class="text-muted">There is no backup yet.</p>
+                                <ul>
+                                    <t t-foreach="instance.backup_ids" t-as="backup">
+                                        <li class="pb-1">
+                                            <span t-field="backup.name"/>
+                                            <span> - </span>
+                                            <span t-field="backup.datetime"/>
+                                            <a class="btn btn-sm btn-link" t-attf-href="/my/instance/{{instance.id}}/download-backup/{{backup.id}}" title="Download"><i class="fa fa-fw fa-download"/></a>
+                                        </li>
+                                    </t>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card mb-4" t-if="instance.sale_order_count">
+                        <div class="card-body">
+                            <h3 class="card-title">Sale Orders</h3>
+                            <t t-call="portal.portal_table">
+                            	<thead>
+				                    <tr class="active">
+				                        <th>
+				                            <span class='d-none d-md-inline'>Sales Order #</span>
+				                            <span class='d-block d-md-none'>Ref.</span>
+				                        </th>
+				                        <th class="text-end">Order Date</th>
+				                        <th class="text-center"/>
+				                        <th class="text-end">Total</th>
+				                    </tr>
+				                </thead>
+				                <t t-foreach="instance.sale_order_ids" t-as="order">
+				                    <tr>
+				                        <td><a t-att-href="order.get_portal_url()"><t t-out="order.name"/></a></td>
+				                        <td class="text-end">
+				                            <span t-field="order.date_order" t-options="{'widget': 'date'}"/>&amp;nbsp;
+				                            <span class='d-none d-md-inline' t-field="order.date_order" t-options="{'time_only': True}"/>
+				                        </td>
+				                        <td class="text-center">
+				                            <span t-if="order.locked"  class="badge rounded-pill text-bg-success">
+				                                <i class="fa fa-fw fa-check" role="img" aria-label="Done" title="Done"/>Done
+				                            </span>
+				                        </td>
+				                        <td class="text-end"><span t-field="order.amount_total"/></td>
+				                    </tr>
+				                </t>
+                            </t>                            
+                        </div>
+                    </div>
+                    <div class="card mb-4" t-if="instance.account_move_count">
+                        <div class="card-body">
+                            <h3 class="card-title">Invoices</h3>
+                            <t t-call="portal.portal_table">
+                            	<thead>
+					                <tr class="active">
+					                    <th>Invoice #</th>
+					                    <th>Invoice Date</th>
+					                    <th class='d-none d-md-table-cell'>Due Date</th>
+					                    <th>Status</th>
+					                    <th class="text-end">Amount Due</th>
+					                </tr>
+					            </thead>
+				                <tbody>
+					                <t t-foreach="instance.account_move_ids" t-as="invoice">
+					                    <tr>
+					                        <td>
+					                            <a t-att-href="invoice.get_portal_url()" t-att-title="invoice.name">
+					                                <t t-out="invoice.name" t-if="invoice.name != '/'"/>
+					                                <em t-else="">Draft Invoice</em>
+					                            </a>
+					                        </td>
+					                        <td><span t-field="invoice.invoice_date"/></td>
+					                        <td class='d-none d-md-table-cell'><span t-field="invoice.invoice_date_due"/></td>
+					                        <td name="invoice_status">
+					                            <t t-if="invoice.state == 'posted'" name="invoice_status_posted">
+					                                <span t-if="invoice.payment_state in ('paid', 'in_payment')"
+					                                      class="badge rounded-pill text-bg-success">
+					                                    <i class="fa fa-fw fa-check" aria-label="Paid" title="Paid" role="img"/>
+					                                    <span class="d-none d-md-inline"> Paid</span>
+					                                </span>
+					                                <span t-elif="invoice.payment_state == 'reversed'"
+					                                      class="badge rounded-pill text-bg-success">
+					                                    <i class="fa fa-fw fa-check" aria-label="Reversed" title="Reversed" role="img"/>
+					                                    <span class="d-none d-md-inline"> Reversed</span>
+					                                </span>
+					                                <span t-else="" class="badge rounded-pill text-bg-info" name="invoice_status_waiting_for_payment">
+					                                    <i class="fa fa-fw fa-clock-o" aria-label="Opened" title="Opened" role="img"/>
+					                                    <span class="d-none d-md-inline"> Waiting for Payment</span>
+					                                </span>
+					                            </t>
+					                            <t t-elif="invoice.state == 'cancel'">
+					                                <span class="badge rounded-pill text-bg-warning">
+					                                    <i class="fa fa-fw fa-remove" aria-label="Cancelled" title="Cancelled" role="img"/>
+					                                    <span class="d-none d-md-inline"> Cancelled</span>
+					                                </span>
+					                            </t>
+					                        </td>
+					                        <td class="text-end"><span t-out="-invoice.amount_residual if invoice.move_type == 'out_refund' else invoice.amount_residual" t-options='{"widget": "monetary", "display_currency": invoice.currency_id}'/></td>
+					                    </tr>
+					                </t>
+					            </tbody>
+                            </t>                            
+                        </div>
+                    </div>
+                    <!-- chatter -->
+                    <div id="instance_communication" class="mt-4">
+                        <h2>History</h2>
+                        <t t-call="portal.message_thread">
+                            <t t-set="object" t-value="instance"/>
+                        </t>
+                    </div>
+                </div>
+            </div>
+        </xpath>
+    </template>
+
+</odoo>
