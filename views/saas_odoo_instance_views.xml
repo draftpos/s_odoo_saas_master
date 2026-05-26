@@ -160,18 +160,9 @@
                     	</group>
                     	<group>                    		
                     		<field name="pserver_id"/>
-                    		<label for="docker_xmlrpc_expose_port" string="Xmlrpc Port"/>
-             				<div class="d-flex gap-2">                    				
-               					<field name="docker_xmlrpc_expose_port" class="oe_inline" />:<field name="docker_xmlrpc_container_port" />
-               				</div>
-               				<label for="docker_xmlrpcs_expose_port" string="Xmlrpcs Port"/>
-                 			<div class="d-flex gap-2">                    				
-                  				<field name="docker_xmlrpcs_expose_port" class="oe_inline" />:<field name="docker_xmlrpcs_container_port" />
+                  			<div class="d-flex gap-2">
+                  				<!-- Deprecated Docker fields removed -->
                   			</div>
-                 			<label for="docker_longpolling_expose_port" string="Longpolling Port"/>
-                			<div class="d-flex gap-2">                    				
-                 				<field name="docker_longpolling_expose_port" class="oe_inline" />:<field name="docker_longpolling_container_port" />
-                 			</div>
                  			<label for="active_user" string="Active Users"/>
                  			<div>
                  				<field name="active_user" nolabel="1" class="oe_inline"/> / <field name="paid_user" nolabel="1" class="oe_inline"/>
@@ -268,30 +259,7 @@
 					            </list>
                     		</field>
                     	</page>
-                    	<page name="containers" string="Containers">
-                    		<field name="docker_container_ids">
-                    			<list>
-					                <field name="name"/>
-					 				<field name="image"/>
-					 				<field name="ports"/>
-					 				<field name="state" />
-					 				<button icon="fa-refresh" string="Restart" type="object" name="action_restart" invisible="state != 'run'"/>
-					 				<button icon="fa-stop-circle" string="Stop" type="object" name="action_stop" invisible="state != 'run'"/>
-					 				<button icon="fa-play-circle" string="Start" type="object" name="action_start" invisible="state != 'stop'"/>
-					            </list>
-                    		</field>
-                    	</page>
-                    	<page name="volumes" string="Volumes">
-                    		<field name="docker_compose_volume_ids">
-                    			<list>
-					                <field name="container_id" string="Container"/>
-					   				<field name="name" string="Name"/>                    				
-					   				<field name="volume_type" string="Type"/>
-					   				<field name="container_path"/>
-					   				<field name="storage_path"/>
-					            </list>
-                    		</field>
-                    	</page>
+                    	<!-- Removed Docker Containers and Volumes pages as we now deploy natively -->
                     	<page name="domain_name" string="Domain Name">
                     		<field name="domain_name_ids">
                     			<list>

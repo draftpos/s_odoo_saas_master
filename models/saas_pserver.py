@@ -136,9 +136,9 @@ class PServer(models.Model):
         self._exec_cmd("rm -rf /home/%s/odoo-web-data/sessions" % instance.technical_name, ssh)
 
     def _create_instance_folder(self, instance, ssh):
-        self._exec_cmd('mkdir -p /home/%s' % instance.technical_name, ssh)
-        for volume in instance.docker_compose_volume_ids:
-            self._exec_cmd('mkdir -p %s' % volume.storage_path, ssh)
+        base = '/home/%s' % instance.technical_name
+        for subdir in ['', '/config', '/odoo-web-data', '/custom-addons', '/logs']:
+            self._exec_cmd('mkdir -p %s%s' % (base, subdir), ssh)
 
     def _create_odoo_instance_config_file(self, instance, ssh):
         file_content = self.env['saas.odoo.instance.config']._get_config_file_content(instance)
@@ -298,12 +298,8 @@ class PServer(models.Model):
             raise UserError(str(ex))
 
     def _remove_odoo_instance_config_file(self, instance, ssh):
-        config_volumes = instance.docker_compose_volume_ids.filtered(
-            lambda v: v.volume_type == 'odoo_config'
-        )
-        if not config_volumes:
-            raise UserError(_("Cannot find odoo_config volume for instance %s") % instance.name)
-        self._exec_cmd('rm -f %s' % config_volumes[0].storage_path, ssh)
+        config_path = '/home/%s/config/odoo.conf' % instance.technical_name
+        self._exec_cmd('rm -f %s' % config_path, ssh)
 
     def _cancel_nginx(self, domain_name_ids):
         ssh = self._connect()

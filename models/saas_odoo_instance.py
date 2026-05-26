@@ -2,7 +2,6 @@ import random
 import string
 import os
 import requests
-from lxml import etree
 from datetime import datetime, timedelta, date
 from dateutil.relativedelta import relativedelta
 import logging
@@ -539,14 +538,17 @@ class OdooInstance(models.Model):
                 raise UserError(_("Backup Instance Error: %s") % error)
 
     def action_restart(self):
-        self.docker_container_ids.action_restart()
+        for r in self:
+            r.pserver_id._systemd_operation(r, 'restart')
 
     def action_stop(self):
-        self.docker_container_ids.action_stop()
+        for r in self:
+            r.pserver_id._systemd_operation(r, 'stop')
         self.write({'operation_state': 'stop'})
 
     def action_start(self):
-        self.docker_container_ids.action_start()
+        for r in self:
+            r.pserver_id._systemd_operation(r, 'start')
         self.write({'state': 'deploy', 'operation_state': 'run'})
 
     def action_suspend(self, has_extra=False):
@@ -588,25 +590,7 @@ class OdooInstance(models.Model):
         return ''.join(random.choice(string.ascii_lowercase) for i in range(length))
 
     def _prepare_docker_containers(self):
-        res = [
-        (0, 0, {
-            'name': 'odoo_%s' % self.technical_name,
-            'container_type': 'odoo',
-            'image': self.docker_odoo_image,
-            'docker_compose_volume_ids': self._prepare_docker_compose_odoo_volumes()
-        }),
-        (0, 0, {
-            'name': 'psql_%s' % self.technical_name,
-            'container_type': 'psql',
-            'image': self.docker_psql_image,
-            'docker_compose_volume_ids': [(0, 0, {
-                'instance_id': self.id,
-                'name': 'pgdata',
-                'volume_type': 'pgdata',
-                'container_path': '/var/lib/postgresql/data/pgdata'
-            })]
-        })]
-        return res
+        return []
 
     def _prepare_docker_compose_odoo_volumes(self):
         volumes = [
@@ -664,22 +648,23 @@ class OdooInstance(models.Model):
     
     def _prepare_conf_vals_list(self):
         conf_vals_list = []
+        handled_configs = set()
         for conf in self.odoo_version_id.config_ids:
             value = conf.value
             if conf.name == 'addons_path':
                 addons_path = []
                 if not self.odoo_server_id.extra_addon_ids and not self.custom_addon_ids:
-                    addons_path = ['/mnt/extra-addons']
+                    addons_path = ['/home/%s/custom-addons' % self.technical_name]
                 else:
                     if self.odoo_server_id.extra_addon_ids:
-                        addons_path += self.odoo_server_id.extra_addon_ids.mapped('docker_container_path')
+                        addons_path += self.odoo_server_id.extra_addon_ids.mapped('source_path')
                     if self.custom_addon_ids:
-                        addons_path += self.custom_addon_ids.mapped('container_path')
+                        addons_path += self.custom_addon_ids.mapped('addon_path')
                 value = ','.join(addons_path)
             elif conf.name == 'admin_passwd':
                 value = ''.join(random.choice(string.ascii_lowercase) for i in range(32))
             elif conf.name == 'data_dir':
-                value = '/var/lib/odoo'
+                value = '/home/%s/odoo-web-data' % self.technical_name
             elif conf.name == 'db_name':
                 if not self.template_instance_id:
                     value = self.technical_name
@@ -699,7 +684,7 @@ class OdooInstance(models.Model):
                     else:
                         value = self.technical_name
             elif conf.name == 'logfile':
-                value = '/var/log/odoo/odoo.log'
+                value = '/home/%s/odoo.log' % self.technical_name
             elif conf.name == 'without_demo':
                 value = not self.user_demo_data
 
@@ -709,6 +694,24 @@ class OdooInstance(models.Model):
                 'value': str(value),
                 'section_id': conf.section_id.id,
             })
+            handled_configs.add(conf.name)
+
+        # Inject host PostgreSQL credentials dynamically if not already defined
+        section = self.env['saas.odoo.version.config.section'].search([], limit=1)
+        if section:
+            db_configs = {
+                'db_host': self.odoo_server_id.pg_host or 'localhost',
+                'db_user': self.odoo_server_id.pg_user or 'odoo',
+                'db_password': self.odoo_server_id.pg_password or 'odoo',
+            }
+            for name, value in db_configs.items():
+                if name not in handled_configs:
+                    conf_vals_list.append({
+                        'instance_id': self.id,
+                        'name': name,
+                        'value': str(value),
+                        'section_id': section.id,
+                    })
 
         return conf_vals_list
 

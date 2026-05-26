@@ -41,7 +41,7 @@ class OdooInstanceCustomAddon(models.Model):
             raise UserError(_("You can only clone custom addon of deployed instance"))
 
         config = self.instance_id.config_ids.filtered(lambda c: c.name == 'addons_path')
-        config.write({'value': config.value + ',' + self.container_path})
+        config.write({'value': config.value + ',' + self.addon_path})
         self.instance_id.pserver_id._clone_customer_addons(self)
         self.instance_id.action_redeploy_config()
         self.write({'cloned': True})
@@ -54,17 +54,18 @@ class OdooInstanceCustomAddon(models.Model):
     def action_remove(self):
         config = self.instance_id.config_ids.filtered(lambda c: c.name == 'addons_path')
         if config:
-            clone_path_index = config.value.find(self.container_path)
+            clone_path_index = config.value.find(self.addon_path)
             value = False
+            fallback = '/home/%s/custom-addons' % self.instance_id.technical_name
             if clone_path_index == 0:
                 if len(config.value.split(',')) > 1:
-                    value = config.value.replace('%s,' % (self.container_path), '')
+                    value = config.value.replace('%s,' % (self.addon_path), '')
                 else:
-                    value = config.value.replace('%s' % (self.container_path), '/mnt/extra-addons')
+                    value = config.value.replace('%s' % (self.addon_path), fallback)
             elif clone_path_index == -1:
                 value = config.value
             else:
-                value = config.value.replace(',%s' % (self.container_path), '')
+                value = config.value.replace(',%s' % (self.addon_path), '')
             config.write({'value': value})
 
         self.instance_id.pserver_id._remove_customer_addons(self)

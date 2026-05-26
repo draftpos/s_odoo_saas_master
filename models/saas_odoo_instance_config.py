@@ -25,7 +25,4 @@ class OdooInstanceConfig(models.Model):
 
     @api.model
     def _get_config_file_path(self, instance):
-        file_paths = instance.docker_compose_volume_ids.filtered(lambda v: v.volume_type == 'odoo_config')
-        if not file_paths:
-            raise ValidationError(_("Cannot find path to config file."))
-        return file_paths[0].storage_path + '/odoo.conf'
+        return '/home/%s/config/odoo.conf' % instance.technical_name
