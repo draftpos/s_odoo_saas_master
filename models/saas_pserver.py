@@ -92,9 +92,12 @@ class PServer(models.Model):
                 ssh
             )
 
+            modules_to_install = 'base'
             if instance.default_module:
-                init_cmd = f"PGPASSWORD='{server.pg_password}' {server.python_path} {server.odoo_bin_path} -c /home/{instance.technical_name}/config/odoo.conf -i {instance.default_module} -d {instance.technical_name} --stop-after-init"
-                self._exec_cmd(init_cmd, ssh)
+                modules_to_install += f",{instance.default_module}"
+                
+            init_cmd = f"PGPASSWORD='{server.pg_password}' {server.python_path} {server.odoo_bin_path} -c /home/{instance.technical_name}/config/odoo.conf -i {modules_to_install} -d {instance.technical_name} --stop-after-init"
+            self._exec_cmd(init_cmd, ssh)
             
             self._create_systemd_service_file(instance, ssh)
             self._systemd_operation(instance, 'start', ssh=ssh)
