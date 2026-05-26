@@ -248,8 +248,10 @@ class OdooInstance(models.Model):
             r.docker_xmlrpcs_container_port = ''
             r.docker_longpolling_container_port = ''
             if r.odoo_server_id:
-                r.docker_odoo_image = 'odoo:%s' % r.odoo_server_id.odoo_version_id.docker_image_tag
-                r.docker_psql_image = 'postgres:%s' % r.odoo_server_id.psql_version_id.docker_image_tag
+                odoo_tag = r.odoo_server_id.odoo_version_id.docker_image_tag
+                psql_tag = r.odoo_server_id.psql_version_id.docker_image_tag
+                r.docker_odoo_image = 'odoo:%s' % odoo_tag if odoo_tag else ''
+                r.docker_psql_image = 'postgres:%s' % psql_tag if psql_tag else ''
                 r.docker_container_ids = r._prepare_docker_containers()
             for port in r.port_ids:
                 if port.name == 'xmlrpc_port':
