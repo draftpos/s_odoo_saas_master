@@ -716,8 +716,8 @@ After=network.target postgresql.service
 
 [Service]
 Type=simple
-User=root
-Group=root
+User={server.pg_user}
+Group={server.pg_user}
 WorkingDirectory=/opt/odoo19
 Environment="PATH=/opt/odoo19/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 ExecStart=/opt/odoo19/venv/bin/python /opt/odoo19/odoo-bin -c /home/{self.technical_name}/config/odoo.conf
