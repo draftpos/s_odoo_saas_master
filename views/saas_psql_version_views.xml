@@ -7,7 +7,6 @@
         <field name="arch" type="xml">
             <list string="SaaS PSQL Version">
                 <field name="name"/>
-                <field name="docker_image_tag"/>
             </list>
         </field>
     </record>
@@ -29,9 +28,6 @@
                         </h1>
                     </div>
                     <group>
-                    	<group>
-                    		<field name="docker_image_tag"/>
-                    	</group>
                     </group>
                 </sheet>
             </form>

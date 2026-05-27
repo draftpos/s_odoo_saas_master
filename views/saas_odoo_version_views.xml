@@ -8,7 +8,6 @@
             <list string="SaaS Odoo Version">
             	<field name="sequence" widget="handle"/>
                 <field name="name"/>
-                <field name="docker_image_tag"/>
             </list>
         </field>
     </record>
@@ -40,9 +39,6 @@
                         </h1>
                     </div>
                     <group>
-                    	<group>
-                    		<field name="docker_image_tag"/>
-                    	</group>
                     </group>
                 </sheet>
             </form>
