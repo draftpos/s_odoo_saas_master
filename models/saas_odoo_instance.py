@@ -561,23 +561,9 @@ class OdooInstance(models.Model):
             elif conf.name == 'data_dir':
                 value = '/home/%s/odoo-web-data' % self.technical_name
             elif conf.name == 'db_name':
-                if not self.template_instance_id:
-                    value = self.technical_name
-                else:
-                    db_name_configs = self.template_instance_id.config_ids.filtered(lambda c: c.name == 'db_name')
-                    if db_name_configs:                        
-                        value = db_name_configs[0].value
-                    else:
-                        value = self.technical_name
+                value = self.technical_name
             elif conf.name == 'dbfilter':
-                if not self.template_instance_id:
-                    value = self.technical_name
-                else:
-                    db_name_configs = self.template_instance_id.config_ids.filtered(lambda c: c.name == 'db_name')
-                    if db_name_configs:                        
-                        value = db_name_configs[0].value
-                    else:
-                        value = self.technical_name
+                value = '^%s$' % self.technical_name
             elif conf.name == 'logfile':
                 value = '/home/%s/odoo.log' % self.technical_name
             elif conf.name == 'without_demo':

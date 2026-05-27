@@ -116,6 +116,9 @@ class PServer(models.Model):
             self._create_instance_folder(instance, ssh)
             self._prepare_instance_folder_from_template(instance, ssh)
             
+            # Regenerate the configuration file for the new instance so it doesn't use the template's ports or dbfilter
+            self._create_odoo_instance_config_file(instance, ssh)
+            
             # Duplicate the template database natively
             server = instance.odoo_server_id
             template_db = instance.template_instance_id.technical_name
