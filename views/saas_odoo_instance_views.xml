@@ -274,6 +274,12 @@
 					            </list>
                     		</field>
                     	</page>
+                    	<page name="server_logs" string="Logs &amp; Status">
+                            <group>
+                                <button name="action_fetch_logs" type="object" string="Fetch Latest Logs" class="oe_highlight" icon="fa-refresh" invisible="state != 'deploy' or operation_state != 'run'"/>
+                            </group>
+                            <field name="server_log" widget="text" nolabel="1" readonly="1" options="{'line_breaks': True}" style="font-family: monospace; background-color: #222; color: #0f0; padding: 10px; width: 100%; min-height: 400px;"/>
+                    	</page>
                     </notebook>
                 </sheet>
                 <chatter reload_on_attachment="True"/>

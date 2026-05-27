@@ -35,6 +35,7 @@ class OdooInstance(models.Model):
     url = fields.Char(string="URL", compute='_compute_url', store=True)
     technical_name = fields.Char(string="Technical Name", compute='_compute_technical_name', store=True)
     noindex = fields.Boolean(string='No Index', default=True)
+    server_log = fields.Text(string="Server Logs", readonly=True, help="Latest logs from the remote server")
     domain_name = fields.Char(string="Domain Name", compute='_compute_domain_name', store=True)
     based_domain_id = fields.Many2one('saas.based.domain', string="Based Domain", required=True, default=_default_based_domain)
     odoo_version_id = fields.Many2one('saas.odoo.version', string='Odoo Version', required=True, default=_default_odoo_version)
@@ -581,6 +582,11 @@ class OdooInstance(models.Model):
                 value = '/home/%s/odoo.log' % self.technical_name
             elif conf.name == 'without_demo':
                 value = not self.user_demo_data
+            elif conf.name in ['xmlrpc_port', 'xmlrpcs_port', 'longpolling_port', 'gevent_port']:
+                port_name = 'longpolling_port' if conf.name == 'gevent_port' else conf.name
+                port_record = self.port_ids.filtered(lambda p: p.name == port_name)
+                if port_record:
+                    value = port_record[0].port
 
             conf_vals_list.append({
                 'instance_id': self.id,
@@ -608,15 +614,6 @@ class OdooInstance(models.Model):
                     })
                     handled_configs.add(name)
 
-            for port in self.port_ids:
-                if port.name == 'xmlrpc_port' and 'http_port' not in handled_configs:
-                    conf_vals_list.append({'instance_id': self.id, 'name': 'http_port', 'value': str(port.port), 'section_id': section.id})
-                elif port.name == 'longpolling_port':
-                    if self.odoo_version_id.version >= 16 and 'gevent_port' not in handled_configs:
-                        conf_vals_list.append({'instance_id': self.id, 'name': 'gevent_port', 'value': str(port.port), 'section_id': section.id})
-                    elif self.odoo_version_id.version < 16 and 'longpolling_port' not in handled_configs:
-                        conf_vals_list.append({'instance_id': self.id, 'name': 'longpolling_port', 'value': str(port.port), 'section_id': section.id})
-
         return conf_vals_list
 
     def _generate_instance_extra_addons(self):
@@ -642,6 +639,21 @@ class OdooInstance(models.Model):
                 })
 
         self.env['saas.odoo.instance.extra.addon'].sudo().create(extra_addon_vals_list)
+
+    def action_fetch_logs(self):
+        for r in self:
+            if not r.pserver_id:
+                raise UserError(_("No physical server linked to this instance."))
+            ssh = r.pserver_id._connect()
+            try:
+                cmd = f"tail -n 150 /home/{r.technical_name}/odoo.log"
+                stdin, stdout, stderr = ssh.exec_command(cmd)
+                logs = stdout.read().decode('utf-8')
+                r.server_log = logs
+            except Exception as e:
+                r.server_log = f"Failed to fetch logs: {e}"
+            finally:
+                ssh.close()
 
     def _generate_instance_domain_name(self):
         domain_name = self.env['saas.odoo.instance.domain.name'].search([('name', '=', self.domain_name)])
