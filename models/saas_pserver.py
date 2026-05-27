@@ -96,12 +96,13 @@ class PServer(models.Model):
             if instance.default_module:
                 modules_to_install += f",{instance.default_module}"
                 
-            init_cmd = f"PGPASSWORD='{server.pg_password}' {server.python_path} {server.odoo_bin_path} -c /home/{instance.technical_name}/config/odoo.conf -i {modules_to_install} -d {instance.technical_name} --stop-after-init"
-            self._exec_cmd(init_cmd, ssh)
+            init_cmd = f"PGPASSWORD='{server.pg_password}' /opt/odoo19/venv/bin/python /opt/odoo19/odoo-bin -c /home/{instance.technical_name}/config/odoo.conf -i {modules_to_install} -d {instance.technical_name} --stop-after-init"
+            self._exec_cmd(init_cmd, ssh, raise_on_error=True)
             
             self._create_systemd_service_file(instance, ssh)
             self._systemd_operation(instance, 'start', ssh=ssh)
             self._create_nginx_file(instance.domain_name_ids, ssh)
+            self._exec_cmd("systemctl reload nginx", ssh)
             ssh.close()
         except Exception as ex:
             try:
@@ -129,6 +130,7 @@ class PServer(models.Model):
             self._create_systemd_service_file(instance, ssh)
             self._systemd_operation(instance, 'start', ssh=ssh)
             self._create_nginx_file(instance.domain_name_ids, ssh)
+            self._exec_cmd("systemctl reload nginx", ssh)
             ssh.close()
         except Exception as ex:
             try:
@@ -202,7 +204,7 @@ class PServer(models.Model):
 
         self._exec_cmd('systemctl reload nginx', ssh)
         domain_names = ' -d '.join(domain_name_ids.mapped('name'))
-        self._exec_cmd('certbot --non-interactive --nginx --agree-tos -d %s --redirect' % domain_names, ssh)
+        self._exec_cmd('certbot --non-interactive --nginx --agree-tos --register-unsafely-without-email -d %s --redirect' % domain_names, ssh)
 
     def _revoke_odoo_instance(self, instance, ssh=None):
         if not self._is_valid_ssh(ssh):

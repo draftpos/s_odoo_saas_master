@@ -10,11 +10,12 @@ class SSHMixin(models.AbstractModel):
     _name = 'saas.ssh.mixin'
     _description = "SaaS SSH Mixin"
 
-    def _exec_cmd(self, command, ssh, arguments=False, without_return=True):
+    def _exec_cmd(self, command, ssh, arguments=False, without_return=True, raise_on_error=False):
         """
         Execute a command over SSH.
         - arguments: list of strings to feed to stdin (e.g. passwords)
         - without_return: if False, return stdout lines; if True return None
+        - raise_on_error: if True, raise UserError if command fails
         Always logs stderr at WARNING level so errors are visible in the log.
         """
         assert isinstance(command, str) and command
@@ -37,6 +38,11 @@ class SSHMixin(models.AbstractModel):
                 "SSH command stderr (exit=%s) [%s]: %s",
                 exit_code, command, err_output
             )
+            
+        if raise_on_error and exit_code != 0:
+            from odoo.exceptions import UserError
+            from odoo import _
+            raise UserError(_("Command failed with exit code %s: %s\nStderr: %s") % (exit_code, command, err_output))
 
         if not without_return:
             return stdout.readlines()

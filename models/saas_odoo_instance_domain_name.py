@@ -113,7 +113,7 @@ class OdooInstanceDomainName(models.Model):
         file_content += '\t\t# set headers\n'
         file_content += '\t\tproxy_set_header Host $host;\n'
         file_content += '\t\tproxy_set_header X-Real-IP $remote_addr;\n'
-        file_content += '\t\tproxy_set_header X-Forward-For $proxy_add_x_forwarded_for;\n'
+        file_content += '\t\tproxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n'
 
         file_content += '\t\t# by default, do not forward anything\n'
         file_content += '\t\tproxy_redirect off;\n'

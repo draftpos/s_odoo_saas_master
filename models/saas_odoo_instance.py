@@ -542,65 +542,77 @@ class OdooInstance(models.Model):
         return self.env['saas.odoo.instance.config'].create(conf_vals_list)
     
     def _prepare_conf_vals_list(self):
-        conf_vals_list = []
-        handled_configs = set()
+        conf_dict = {}
+        section = self.env['saas.odoo.version.config.section'].search([], limit=1)
+        
         for conf in self.odoo_version_id.config_ids:
+            name = conf.name
             value = conf.value
-            if conf.name == 'addons_path':
+            
+            if name == 'addons_path':
                 addons_path = []
                 if not self.odoo_server_id.extra_addon_ids and not self.custom_addon_ids:
-                    addons_path = ['/home/%s/custom-addons' % self.technical_name]
+                    addons_path = ['/opt/odoo19/addons', '/home/%s/custom-addons' % self.technical_name]
                 else:
+                    addons_path.append('/opt/odoo19/addons')
                     if self.odoo_server_id.extra_addon_ids:
                         addons_path += self.odoo_server_id.extra_addon_ids.mapped('source_path')
                     if self.custom_addon_ids:
                         addons_path += self.custom_addon_ids.mapped('addon_path')
                 value = ','.join(addons_path)
-            elif conf.name == 'admin_passwd':
+            elif name == 'admin_passwd':
                 value = ''.join(random.choice(string.ascii_lowercase) for i in range(32))
-            elif conf.name == 'data_dir':
+            elif name == 'data_dir':
                 value = '/home/%s/odoo-web-data' % self.technical_name
-            elif conf.name == 'db_name':
+            elif name == 'db_name':
                 value = self.technical_name
-            elif conf.name == 'dbfilter':
+            elif name == 'dbfilter':
                 value = '^%s$' % self.technical_name
-            elif conf.name == 'logfile':
+            elif name == 'logfile':
                 value = '/home/%s/odoo.log' % self.technical_name
-            elif conf.name == 'without_demo':
+            elif name == 'without_demo':
                 value = not self.user_demo_data
-            elif conf.name in ['xmlrpc_port', 'xmlrpcs_port', 'longpolling_port', 'gevent_port']:
-                port_name = 'longpolling_port' if conf.name == 'gevent_port' else conf.name
+            elif name in ['xmlrpc_port', 'http_port', 'xmlrpcs_port', 'longpolling_port', 'gevent_port']:
+                if name == 'xmlrpc_port':
+                    name = 'http_port'
+                
+                port_name = 'longpolling_port' if name == 'gevent_port' else name
+                if name == 'http_port':
+                    port_name = 'xmlrpc_port'
+                    
                 port_record = self.port_ids.filtered(lambda p: p.name == port_name)
                 if port_record:
                     value = port_record[0].port
 
-            conf_vals_list.append({
+            conf_dict[name] = {
                 'instance_id': self.id,
-                'name': conf.name,
+                'name': name,
                 'value': str(value),
-                'section_id': conf.section_id.id,
-            })
-            handled_configs.add(conf.name)
+                'section_id': conf.section_id.id if conf.section_id else (section.id if section else False),
+            }
 
-        # Inject host PostgreSQL credentials dynamically if not already defined
-        section = self.env['saas.odoo.version.config.section'].search([], limit=1)
+        # Inject host PostgreSQL credentials dynamically
         if section:
             db_configs = {
                 'db_host': self.odoo_server_id.pg_host or 'localhost',
+                'db_port': 5432,
                 'db_user': self.odoo_server_id.pg_user or 'odoo',
                 'db_password': self.odoo_server_id.pg_password or 'odoo',
             }
             for name, value in db_configs.items():
-                if name not in handled_configs:
-                    conf_vals_list.append({
-                        'instance_id': self.id,
-                        'name': name,
-                        'value': str(value),
-                        'section_id': section.id,
-                    })
-                    handled_configs.add(name)
+                conf_dict[name] = {
+                    'instance_id': self.id,
+                    'name': name,
+                    'value': str(value),
+                    'section_id': section.id,
+                }
+                
+        # Remove deprecated keys
+        for deprecated in ['xmlrpc', 'xmlrpcs', 'xmlrpc_interface', 'xmlrpcs_interface']:
+            if deprecated in conf_dict:
+                del conf_dict[deprecated]
 
-        return conf_vals_list
+        return list(conf_dict.values())
 
     def _generate_instance_extra_addons(self):
         extra_addon_vals_list = []
@@ -671,10 +683,14 @@ After=network.target postgresql.service
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/home/{self.technical_name}
-ExecStart={server.python_path} {server.odoo_bin_path} -c /home/{self.technical_name}/config/odoo.conf
-Restart=always
-RestartSec=5
+Group=root
+WorkingDirectory=/opt/odoo19
+Environment="PATH=/opt/odoo19/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/opt/odoo19/venv/bin/python /opt/odoo19/odoo-bin -c /home/{self.technical_name}/config/odoo.conf
+Restart=on-failure
+RestartSec=10
+StartLimitBurst=5
+StartLimitIntervalSec=60
 
 [Install]
 WantedBy=multi-user.target
