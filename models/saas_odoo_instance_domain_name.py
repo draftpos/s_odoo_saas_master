@@ -59,10 +59,10 @@ class OdooInstanceDomainName(models.Model):
         domain_nodot = domain_name.replace('.', '_')
         nginx_server = self.instance_id.odoo_server_id.nginx_server_id
         working_ip = nginx_server.working_ip_id.name
-        xmlrpc_port_record = self.instance_id.port_ids.filtered(lambda p: p.name == 'xmlrpc_port')
+        xmlrpc_port_record = self.instance_id.port_ids.filtered(lambda p: p.name == 'http_port')
         xmlrpc_port = xmlrpc_port_record[0].port if xmlrpc_port_record else 8069
 
-        longpolling_port_record = self.instance_id.port_ids.filtered(lambda p: p.name == 'longpolling_port')
+        longpolling_port_record = self.instance_id.port_ids.filtered(lambda p: p.name == 'gevent_port')
         longpolling_port = longpolling_port_record[0].port if longpolling_port_record else 8072
 
         odoo_version = self.instance_id.odoo_version_id.version

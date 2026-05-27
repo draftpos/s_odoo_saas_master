@@ -519,20 +519,44 @@ class OdooInstance(models.Model):
     # Removed _prepare_docker_containers, _prepare_docker_compose_odoo_volumes
 
     def _generate_instance_port(self):
-        starting_port = self.env.user.company_id.instance_starting_port
-
-        free_ports = self.env['saas.odoo.instance.port'].search([('instance_id', '=', False)], order='port', limit=3)
-        if free_ports:
-            return free_ports.sudo().write({'instance_id': self.id})
-
-        used_port = self.env['saas.odoo.instance.port'].search([('instance_id', '!=', False)], order='port desc', limit=1)
-        if used_port:
-            starting_port = used_port.port + 1
-
+        start_port = 9000
+        end_port = 9999
+        
+        # 1. Get used ports from database
+        used_ports_db = self.env['saas.odoo.instance.port'].search([]).mapped('port')
+        
+        # 2. Get used ports from OS (ss -tlnp)
+        used_ports_os = []
+        if self.pserver_id:
+            ssh = self.pserver_id._connect()
+            try:
+                stdin, stdout, stderr = ssh.exec_command('ss -tlnp')
+                output = stdout.read().decode('utf-8')
+                import re
+                ports = re.findall(r':(\d+)', output)
+                used_ports_os = [int(p) for p in ports]
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning("Could not fetch OS ports: %s", e)
+            finally:
+                ssh.close()
+                
+        all_used_ports = set(used_ports_db + used_ports_os)
+        
+        found_port = None
+        for port in range(start_port, end_port, 2):
+            if port not in all_used_ports and (port + 1) not in all_used_ports:
+                found_port = port
+                break
+                
+        if not found_port:
+            from odoo.exceptions import UserError
+            from odoo import _
+            raise UserError(_("No free ports available in range %s-%s") % (start_port, end_port))
+            
         port_vals_list = [
-            {'name': 'xmlrpc_port', 'port': starting_port, 'pserver_id': self.pserver_id.id, 'instance_id': self.id},
-            {'name': 'xmlrpcs_port', 'port': starting_port + 1, 'pserver_id': self.pserver_id.id, 'instance_id': self.id},
-            {'name': 'longpolling_port', 'port': starting_port + 2, 'pserver_id': self.pserver_id.id, 'instance_id': self.id},
+            {'name': 'http_port', 'port': found_port, 'pserver_id': self.pserver_id.id, 'instance_id': self.id},
+            {'name': 'gevent_port', 'port': found_port + 1, 'pserver_id': self.pserver_id.id, 'instance_id': self.id},
         ]
         return self.env['saas.odoo.instance.port'].sudo().create(port_vals_list)
 
@@ -552,9 +576,9 @@ class OdooInstance(models.Model):
             if name == 'addons_path':
                 addons_path = []
                 if not self.odoo_server_id.extra_addon_ids and not self.custom_addon_ids:
-                    addons_path = ['/opt/odoo19/addons', '/home/%s/custom-addons' % self.technical_name]
+                    addons_path = ['/opt/odoo19/odoo/addons', '/home/%s/custom-addons' % self.technical_name]
                 else:
-                    addons_path.append('/opt/odoo19/addons')
+                    addons_path.append('/opt/odoo19/odoo/addons')
                     if self.odoo_server_id.extra_addon_ids:
                         addons_path += self.odoo_server_id.extra_addon_ids.mapped('source_path')
                     if self.custom_addon_ids:
@@ -607,8 +631,18 @@ class OdooInstance(models.Model):
                     'section_id': section.id,
                 }
                 
+        # Forcefully inject allocated ports
+        for port_record in self.port_ids:
+            if port_record.name in ['http_port', 'gevent_port']:
+                conf_dict[port_record.name] = {
+                    'instance_id': self.id,
+                    'name': port_record.name,
+                    'value': str(port_record.port),
+                    'section_id': section.id if section else False,
+                }
+                
         # Remove deprecated keys
-        for deprecated in ['xmlrpc', 'xmlrpcs', 'xmlrpc_interface', 'xmlrpcs_interface']:
+        for deprecated in ['xmlrpc', 'xmlrpcs', 'xmlrpc_interface', 'xmlrpcs_interface', 'xmlrpc_port', 'xmlrpcs_port', 'longpolling_port']:
             if deprecated in conf_dict:
                 del conf_dict[deprecated]
 

@@ -103,6 +103,14 @@ class PServer(models.Model):
             self._systemd_operation(instance, 'start', ssh=ssh)
             self._create_nginx_file(instance.domain_name_ids, ssh)
             self._exec_cmd("systemctl reload nginx", ssh)
+            
+            # Post-deployment validation: Verify port is listening
+            http_port = instance.port_ids.filtered(lambda p: p.name == 'http_port')
+            if http_port:
+                port = http_port[0].port
+                verify_cmd = f"for i in {{1..30}}; do ss -tlnp | grep ':{port}' && exit 0; sleep 1; done; exit 1"
+                self._exec_cmd(verify_cmd, ssh, raise_on_error=True)
+                
             ssh.close()
         except Exception as ex:
             try:
@@ -131,6 +139,14 @@ class PServer(models.Model):
             self._systemd_operation(instance, 'start', ssh=ssh)
             self._create_nginx_file(instance.domain_name_ids, ssh)
             self._exec_cmd("systemctl reload nginx", ssh)
+            
+            # Post-deployment validation: Verify port is listening
+            http_port = instance.port_ids.filtered(lambda p: p.name == 'http_port')
+            if http_port:
+                port = http_port[0].port
+                verify_cmd = f"for i in {{1..30}}; do ss -tlnp | grep ':{port}' && exit 0; sleep 1; done; exit 1"
+                self._exec_cmd(verify_cmd, ssh, raise_on_error=True)
+                
             ssh.close()
         except Exception as ex:
             try:
