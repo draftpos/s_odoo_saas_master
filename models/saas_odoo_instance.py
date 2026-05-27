@@ -89,21 +89,7 @@ class OdooInstance(models.Model):
     template_instance_id = fields.Many2one('saas.odoo.instance', string='Instance Template',
         domain="[('is_template', '=', True), ('state', '=', 'deploy'), ('odoo_version_id', '=', odoo_version_id)]")
 
-    # docker
-    docker_odoo_image = fields.Char(string='Odoo Image', compute='_compute_docker_compose', store=True)
-    docker_psql_image = fields.Char(string='PSQL Image', compute='_compute_docker_compose', store=True)
-    docker_xmlrpc_expose_port = fields.Char(string='Xmlrpc Expose Port', compute='_compute_docker_compose', store=True)
-    docker_xmlrpcs_expose_port = fields.Char(string='Xmlrpcs Expose Port', compute='_compute_docker_compose', store=True)
-    docker_longpolling_expose_port = fields.Char(string='Longpolling Expose Port', compute='_compute_docker_compose', store=True)
-    docker_xmlrpc_container_port = fields.Char(string='Xmlrpc Container Port', compute='_compute_docker_compose', store=True)
-    docker_xmlrpcs_container_port = fields.Char(string='Xmlrpcs Container Port', compute='_compute_docker_compose', store=True)
-    docker_longpolling_container_port = fields.Char(string='Longpolling Container Port', compute='_compute_docker_compose', store=True)
-    docker_container_ids = fields.One2many('saas.odoo.instance.docker.container', 'instance_id', string='Docker Containers',
-        compute='_compute_docker_compose', store=True)
-    docker_container_count = fields.Integer(string="Docker Container Count", compute='_compute_docker_container_count')
-    docker_compose_volume_ids = fields.One2many('saas.odoo.instance.docker.compose.volume', 'instance_id', string='Docker Compose Volumes', readonly=True)
-    docker_compose_volume_count = fields.Integer(string='Docker Compose Volume Count', compute='_compute_docker_compose_volume_count')
-    need_to_compose_up = fields.Boolean(string='Need to run docker compose up -d', readonly=True)
+    # Removed all docker fields
 
     # sale
     subscription_type = fields.Selection([
@@ -231,55 +217,7 @@ class OdooInstance(models.Model):
                     }))
                 r.custom_addon_ids = custom_addons
 
-    @api.depends('odoo_server_id',
-        'port_ids', 'port_ids.name', 'port_ids.port',
-        'config_ids', 'config_ids.name', 'config_ids.value')
-    def _compute_docker_compose(self):
-        for r in self:
-            r.docker_container_ids = False
-            r.docker_compose_volume_ids = False
-            r.docker_odoo_image = ''
-            r.docker_psql_image = ''
-            r.docker_xmlrpc_expose_port = ''
-            r.docker_xmlrpcs_expose_port = ''
-            r.docker_longpolling_expose_port = ''
-            r.docker_xmlrpc_container_port = ''
-            r.docker_xmlrpcs_container_port = ''
-            r.docker_longpolling_container_port = ''
-            if r.odoo_server_id:
-                odoo_tag = r.odoo_server_id.odoo_version_id.docker_image_tag
-                psql_tag = r.odoo_server_id.psql_version_id.docker_image_tag
-                r.docker_odoo_image = 'odoo:%s' % odoo_tag if odoo_tag else ''
-                r.docker_psql_image = 'postgres:%s' % psql_tag if psql_tag else ''
-                r.docker_container_ids = r._prepare_docker_containers()
-            for port in r.port_ids:
-                if port.name == 'xmlrpc_port':
-                    r.docker_xmlrpc_expose_port = port.port
-                if port.name == 'xmlrpcs_port':
-                    r.docker_xmlrpcs_expose_port = port.port
-                if port.name == 'longpolling_port':
-                    r.docker_longpolling_expose_port = port.port
-            for config in r.config_ids:
-                if config.name == 'xmlrpc_port':
-                    r.docker_xmlrpc_container_port = config.value
-                if config.name == 'xmlrpcs_port':
-                    r.docker_xmlrpcs_container_port = config.value
-                if config.name == 'longpolling_port':
-                    r.docker_longpolling_container_port = config.value
-
-    @api.depends('docker_container_ids')
-    def _compute_docker_container_count(self):
-        container_data = self.env['saas.odoo.instance.docker.container']._read_group([('instance_id', 'in', self.ids)], ['instance_id'], ['__count'])
-        result = {p.id: count for p, count in container_data}
-        for r in self:
-            r.docker_container_count = result.get(r.id, 0)
-
-    @api.depends('docker_compose_volume_ids')
-    def _compute_docker_compose_volume_count(self):
-        volume_data = self.env['saas.odoo.instance.docker.compose.volume']._read_group([('instance_id', 'in', self.ids)], ['instance_id'], ['__count'])
-        result = {p.id: count for p, count in volume_data}
-        for r in self:
-            r.docker_compose_volume_count = result.get(r.id, 0)
+    # Removed _compute_docker_compose, _compute_docker_container_count, _compute_docker_compose_volume_count
 
     @api.depends('domain_name_ids')
     def _compute_domain_name_count(self):
@@ -369,15 +307,7 @@ class OdooInstance(models.Model):
         action['domain'] = [('instance_id', '=', self.id)]
         return action
 
-    def action_view_odoo_instance_container(self):
-        action = self.env['ir.actions.act_window']._for_xml_id('s_odoo_saas_master.saas_odoo_instance_docker_container_action')
-        action['domain'] = [('instance_id', '=', self.id)]
-        return action
-
-    def action_view_odoo_instance_volume(self):
-        action = self.env['ir.actions.act_window']._for_xml_id('s_odoo_saas_master.saas_odoo_instance_docker_compose_volume_action')
-        action['domain'] = [('instance_id', '=', self.id)]
-        return action
+    # Removed action_view_odoo_instance_container, action_view_odoo_instance_volume
 
     def action_view_odoo_instance_domain_name(self):
         action = self.env['ir.actions.act_window']._for_xml_id('s_odoo_saas_master.saas_odoo_instance_domain_name_action')
@@ -576,52 +506,16 @@ class OdooInstance(models.Model):
             odoo_command = 'odoo -u %s -d %s' % (module, r.technical_name)
             r.pserver_id._recreate_docker_compose_file(r, odoo_command)
 
-        self.write({'need_to_compose_up': True})
-
     def action_install_modules(self, module):
         for r in self:
             odoo_command = 'odoo -i %s -d %s' % (module, r.technical_name)
             r.pserver_id._recreate_docker_compose_file(r, odoo_command)
 
-        self.write({'need_to_compose_up': True})
-
     @api.model
     def _get_technical_name(self, length):
         return ''.join(random.choice(string.ascii_lowercase) for i in range(length))
 
-    def _prepare_docker_containers(self):
-        return []
-
-    def _prepare_docker_compose_odoo_volumes(self):
-        volumes = [
-            (0, 0, {
-                'instance_id': self.id,
-                'name': 'odoo-web-data',
-                'volume_type': 'odoo_filestore',
-                'container_path': '/var/lib/odoo'
-            }),
-            (0, 0, {
-                'instance_id': self.id,
-                'name': 'config',
-                'volume_type': 'odoo_config',
-                'container_path': '/etc/odoo',
-            }),
-            (0, 0, {
-                'instance_id': self.id,
-                'name': 'custom-addons',
-                'volume_type': 'odoo_custom_addons',
-                'container_path': '/mnt/extra-addons'
-            })
-        ]
-        for i, extra_addon in enumerate(self.odoo_server_id.extra_addon_ids):
-            container_path = '/mnt/standard-extra-addons' if i == 0 else '/mnt/standard-extra-addons-%d' % (i + 1)
-            volumes.append((0, 0, {
-                'instance_id': self.id,
-                'name': extra_addon.source_path,
-                'volume_type': 'odoo_extra_addons',
-                'container_path': container_path
-            }))
-        return volumes
+    # Removed _prepare_docker_containers, _prepare_docker_compose_odoo_volumes
 
     def _generate_instance_port(self):
         starting_port = self.env.user.company_id.instance_starting_port
@@ -712,6 +606,16 @@ class OdooInstance(models.Model):
                         'value': str(value),
                         'section_id': section.id,
                     })
+                    handled_configs.add(name)
+
+            for port in self.port_ids:
+                if port.name == 'xmlrpc_port' and 'http_port' not in handled_configs:
+                    conf_vals_list.append({'instance_id': self.id, 'name': 'http_port', 'value': str(port.port), 'section_id': section.id})
+                elif port.name == 'longpolling_port':
+                    if self.odoo_version_id.version >= 16 and 'gevent_port' not in handled_configs:
+                        conf_vals_list.append({'instance_id': self.id, 'name': 'gevent_port', 'value': str(port.port), 'section_id': section.id})
+                    elif self.odoo_version_id.version < 16 and 'longpolling_port' not in handled_configs:
+                        conf_vals_list.append({'instance_id': self.id, 'name': 'longpolling_port', 'value': str(port.port), 'section_id': section.id})
 
         return conf_vals_list
 
@@ -758,58 +662,7 @@ class OdooInstance(models.Model):
     def _get_domain_name(self):
         return self.name + '.' + self.based_domain_id.name
 
-    def _get_docker_compose_file_content(self, odoo_command=False):
-        file_content = ''
-        file_content += 'services:\n'
-        file_content += '    web:\n'
-        file_content += '        container_name: odoo_' + self.technical_name + '\n'
-        file_content += '        image: ' + self.docker_odoo_image + '\n'
-        file_content += '        depends_on:\n'
-        file_content += '            - db\n'
-        file_content += '        ports:\n'
-        file_content += '            - "' + self.docker_xmlrpc_expose_port + ':' + self.docker_xmlrpc_container_port + '"\n'
-        file_content += '            - "' + self.docker_xmlrpcs_expose_port + ':' + self.docker_xmlrpcs_container_port + '"\n'
-        file_content += '            - "' + self.docker_longpolling_expose_port + ':' + self.docker_longpolling_container_port + '"\n'
-        file_content += '        restart: unless-stopped\n'
-        if self.docker_compose_volume_ids:
-            file_content += '        volumes:\n'
-            for volume in self.docker_compose_volume_ids.filtered(lambda v: v.volume_type != 'pgdata'):
-                if volume.volume_type == 'odoo_filestore':
-                    file_content += '            - ' + volume.name + ':' + volume.container_path + '\n'
-                elif volume.volume_type == 'odoo_extra_addons':
-                    file_content += '            - ' + volume.name + ':' + volume.container_path + '\n'
-                else:
-                    file_content += '            - ./' + volume.name + ':' + volume.container_path + '\n'
-        if odoo_command:
-            file_content += '        command: ' + odoo_command + '\n'
-        file_content += '    db:\n'
-        file_content += '        container_name: psql_' + self.technical_name + '\n'
-        file_content += '        image: ' + self.docker_psql_image + '\n'
-        file_content += '        environment:\n'
-        file_content += '            - POSTGRES_DB=postgres\n'
-        file_content += '            - POSTGRES_PASSWORD=odoo\n'
-        file_content += '            - POSTGRES_USER=odoo\n'
-        file_content += '            - PGDATA=/var/lib/postgresql/data/pgdata\n'
-        file_content += '        restart: unless-stopped\n'
-        if self.docker_compose_volume_ids:
-            file_content += '        volumes:\n'
-            for volume in self.docker_compose_volume_ids.filtered(lambda v: v.volume_type == 'pgdata'):
-                file_content += '            - ./' + volume.name + ':' + volume.container_path + '\n'
-
-            if any(volume.volume_type == 'odoo_filestore' for volume in self.docker_compose_volume_ids):
-                file_content += 'volumes:\n'
-                for volume in self.docker_compose_volume_ids.filtered(lambda v: v.volume_type == 'odoo_filestore'):
-                    file_content += '    ' + volume.name + ':\n'
-                    file_content += '        driver: local\n'
-                    file_content += '        driver_opts:\n'
-                    file_content += '            type: none\n'
-                    file_content += '            device: ' + volume.storage_path + '\n'
-                    file_content += '            o: bind\n'
-
-        return file_content
-
-    def _get_docker_compose_file_path(self):
-        return '/home/%s/docker-compose.yml' % self.technical_name
+    # Removed _get_docker_compose_file_content and _get_docker_compose_file_path
 
     def _get_systemd_service_file_content(self):
         server = self.odoo_server_id

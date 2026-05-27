@@ -49,8 +49,7 @@
         'views/saas_odoo_instance_views.xml',
         'views/saas_odoo_instance_port_views.xml',
         'views/saas_odoo_instance_config_views.xml',
-        'views/saas_odoo_instance_docker_container_views.xml',
-        'views/saas_odoo_instance_docker_compose_volume_views.xml',
+
         'views/saas_odoo_instance_domain_name_views.xml',
         'views/saas_odoo_instance_backup_views.xml',
         'views/saas_odoo_instance_custom_addon_views.xml',

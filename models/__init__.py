@@ -14,9 +14,7 @@ from . import saas_blocked_domain
 from . import saas_odoo_server
 from . import saas_odoo_instance
 from . import saas_odoo_instance_port
-from . import saas_odoo_instance_docker_compose_volume
 from . import saas_odoo_instance_config
-from . import saas_odoo_instance_docker_container
 from . import saas_odoo_instance_domain_name
 from . import saas_odoo_instance_backup
 from . import saas_odoo_server_extra_addons
