@@ -2,7 +2,6 @@
 <odoo>
 
     <!-- Custom SaaS Category -->
- 
 
     <!-- SaaS User UoM -->
     <record id="product_uom_saas_user_month" model="uom.uom">
@@ -18,6 +17,19 @@
         <field name="factor" eval="1.0"/>
         <field name="rounding" eval="1.0"/>
         <field name="active" eval="True"/>
+    </record>
+
+    <!-- SaaS User Product -->
+    <record id="product_saas_user" model="product.product">
+        <field name="name">SaaS User</field>
+        <field name="type">service</field>
+        <field name="is_saas_user" eval="True"/>
+        <field name="uom_id" ref="product_uom_saas_user_month"/>
+        <field name="uom_po_id" ref="product_uom_saas_user_month"/>
+        <field name="list_price">0.0</field>
+        <field name="default_code">SAAS-USER</field>
+        <field name="sale_ok" eval="True"/>
+        <field name="purchase_ok" eval="False"/>
     </record>
 
     <!-- Product definition using SaaS App UoM -->
