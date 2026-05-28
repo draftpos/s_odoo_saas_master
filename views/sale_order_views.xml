@@ -24,7 +24,7 @@
             	<field name="is_saas_order" readonly="state not in ['draft', 'sent'] or saas_order_type != 'buy_new'"/>
             	<field name="saas_order_type" invisible="not is_saas_order"/>
                 <field name="subscription_type" widget="radio"
-                	readonly="state not in ['draft', 'sent'] or (saas_order_type != 'buy_new' and not is_saas_trial)"
+                	readonly="state not in ['draft', 'sent']"
                 	invisible="not is_saas_order"/>
                 <field name="instance_id"
                 	groups="s_odoo_saas_master.group_odoo_saas_user"
