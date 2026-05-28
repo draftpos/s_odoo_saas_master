@@ -25,7 +25,6 @@
         <field name="type">service</field>
         <field name="is_saas_user" eval="True"/>
         <field name="uom_id" ref="product_uom_saas_user_month"/>
-        <field name="uom_po_id" ref="product_uom_saas_user_month"/>
         <field name="list_price">0.0</field>
         <field name="default_code">SAAS-USER</field>
         <field name="sale_ok" eval="True"/>
