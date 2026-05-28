@@ -38,7 +38,7 @@ class Website(models.Model):
         order_line_vals.append((0, 0, {
             'product_id': user_product.id,
             'product_uom_qty': users_count,
-            'product_uom': user_product.uom_id.id,
+            'product_uom_id': user_product.uom_id.id,
             'price_unit': user_price_unit,
             'tax_id': [(6, 0, user_product.taxes_id.ids)],
         }))
@@ -50,7 +50,7 @@ class Website(models.Model):
             order_line_vals.append((0, 0, {
                 'product_id': app_id,
                 'product_uom_qty':1,
-                'product_uom': app_product.uom_id.id,
+                'product_uom_id': app_product.uom_id.id,
                 'price_unit': app_price_unit,
                 'tax_id': [(6, 0, app_product.taxes_id.ids)],
             }))

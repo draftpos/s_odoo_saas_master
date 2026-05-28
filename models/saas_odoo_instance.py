@@ -977,7 +977,7 @@ WantedBy=multi-user.target
         if product_user:
             order_lines.append((0, 0, {
                 'product_id': product_user.id,
-                'product_uom': product_user.uom_id.id,
+                'product_uom_id': product_user.uom_id.id,
                 'price_unit': product_user.list_price,
                 'product_uom_qty': max(self.active_user, self.paid_user) if not buy_extra else (self.active_user - self.paid_user),
             }))
@@ -992,7 +992,7 @@ WantedBy=multi-user.target
             if product_app:
                 order_lines.append((0, 0, {
                     'product_id': product_app.id,
-                    'product_uom': product_app.uom_id.id,
+                    'product_uom_id': product_app.uom_id.id,
                     'price_unit': product_app.list_price,
                     'product_uom_qty': 12 if self.subscription_type == 'yearly' else 1,
                 }))
