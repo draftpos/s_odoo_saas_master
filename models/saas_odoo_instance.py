@@ -77,6 +77,7 @@ class OdooInstance(models.Model):
         ('run', 'Running'),
         ('stop', 'Stopped')
     ], string='Operation Status', default='draft', readonly=True)
+    is_reachable = fields.Boolean(string="Is Reachable", default=False, readonly=True)
     is_template = fields.Boolean(string='Is Template?', help="This instance will be used as a template for other instances. "
                                  "Then the database, file store,... of this instance will be copied to the new instance as a template.")
     deploy_mail_template_id = fields.Many2one('mail.template', string='Deploy Email Template',
@@ -522,26 +523,12 @@ class OdooInstance(models.Model):
         start_port = 9000
         end_port = 9999
         
+        # Lock the table to prevent race conditions during concurrent deployments
+        self.env.cr.execute("LOCK TABLE saas_odoo_instance_port IN EXCLUSIVE MODE")
+        
         # 1. Get used ports from database
         used_ports_db = self.env['saas.odoo.instance.port'].search([]).mapped('port')
-        
-        # 2. Get used ports from OS (ss -tlnp)
-        used_ports_os = []
-        if self.pserver_id:
-            ssh = self.pserver_id._connect()
-            try:
-                stdin, stdout, stderr = ssh.exec_command('ss -tlnp')
-                output = stdout.read().decode('utf-8')
-                import re
-                ports = re.findall(r':(\d+)', output)
-                used_ports_os = [int(p) for p in ports]
-            except Exception as e:
-                import logging
-                logging.getLogger(__name__).warning("Could not fetch OS ports: %s", e)
-            finally:
-                ssh.close()
-                
-        all_used_ports = set(used_ports_db + used_ports_os)
+        all_used_ports = set(used_ports_db)
         
         found_port = None
         for port in range(start_port, end_port, 2):
@@ -763,6 +750,20 @@ WantedBy=multi-user.target
             backups_to_unlink |= backups[ins.backup_limit:]
         if backups_to_unlink:
             backups_to_unlink.unlink()
+
+    @api.model
+    def cron_update_instance_reachability(self):
+        instances = self.search([('state', '=', 'deploy')])
+        for instance in instances:
+            reachable = False
+            if instance.url:
+                try:
+                    res = requests.get(instance.url + '/web/webclient/version_info', timeout=5, verify=False)
+                    if res.status_code == 200:
+                        reachable = True
+                except Exception:
+                    pass
+            instance.write({'is_reachable': reachable})
 
     def action_get_active_users(self):
         results = {}

@@ -122,7 +122,7 @@ class OdooInstanceDomainName(models.Model):
 
         if odoo_version >= 16:
             file_content += "\tlocation /websocket {\n"
-            file_content += "\t\tproxy_pass http://127.0.0.1:%s;\n" % (longpolling_port)
+            file_content += "\t\tproxy_pass http://%s:%s;\n" % (working_ip, longpolling_port)
             file_content += "\t\tproxy_set_header X-Forwarded-Host $host;\n"
             file_content += "\t\tproxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n"
             file_content += "\t\tproxy_set_header X-Forwarded-Proto $scheme;\n"
@@ -133,7 +133,7 @@ class OdooInstanceDomainName(models.Model):
             file_content += '\n'
         else:
             file_content += "\tlocation /longpolling {\n"
-            file_content += "\t\tproxy_pass http://127.0.0.1:%s;\n" % (longpolling_port)
+            file_content += "\t\tproxy_pass http://%s:%s;\n" % (working_ip, longpolling_port)
             file_content += "\t\tproxy_redirect off;\n"
             file_content += "\t}\n"
             file_content += '\n'
