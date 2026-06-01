@@ -139,7 +139,12 @@ class SaaSAPI(http.Controller):
             if phone:
                 user_vals['phone'] = phone
 
-            user = request.env['res.users'].sudo().create(user_vals)
+            user = request.env['res.users'].sudo().with_context(
+                no_reset_password=True,
+                mail_create_nolog=True,
+                mail_create_nosubscribe=True,
+                mail_notrack=True
+            ).create(user_vals)
 
             # Generate API token
             token = request.env['saas.api.token'].sudo().create({
