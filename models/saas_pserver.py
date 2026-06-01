@@ -85,9 +85,6 @@ class PServer(models.Model):
             self._create_odoo_instance_config_file(instance, ssh)
             self._create_custom_addons(instance.custom_addon_ids, ssh)
             
-            # Copy standard tenant SSO module
-            self._exec_cmd('cp -r /opt/odoo19/custom-addons/s_odoo_saas_master/tenant_addons/s_odoo_saas_tenant /home/%s/custom-addons/' % instance.technical_name, ssh, raise_on_error=False)
-            
             # Create host PostgreSQL database
             server = instance.odoo_server_id
             self._exec_cmd(
@@ -95,7 +92,7 @@ class PServer(models.Model):
                 ssh
             )
 
-            modules_to_install = 'base,s_odoo_saas_tenant'
+            modules_to_install = 'base'
             if instance.default_module:
                 modules_to_install += f",{instance.default_module}"
                 
@@ -133,9 +130,6 @@ class PServer(models.Model):
             # Regenerate the configuration file for the new instance so it doesn't use the template's ports or dbfilter
             self._create_odoo_instance_config_file(instance, ssh)
             
-            # Copy standard tenant SSO module
-            self._exec_cmd('cp -r /opt/odoo19/custom-addons/s_odoo_saas_master/tenant_addons/s_odoo_saas_tenant /home/%s/custom-addons/' % instance.technical_name, ssh, raise_on_error=False)
-            
             # Duplicate the template database natively
             server = instance.odoo_server_id
             template_db = instance.template_instance_id.technical_name
@@ -145,10 +139,6 @@ class PServer(models.Model):
 
             self._create_systemd_service_file(instance, ssh)
             self._exec_cmd(f"chown -R {server.pg_user}:{server.pg_user} /home/{instance.technical_name}", ssh)
-            
-            # Ensure the SSO module is installed on the cloned database
-            install_cmd = f"sudo -u {server.pg_user} bash -c \"PGPASSWORD='{server.pg_password}' /opt/odoo19/venv/bin/python /opt/odoo19/odoo-bin -c /home/{instance.technical_name}/config/odoo.conf -i s_odoo_saas_tenant -d {instance.technical_name} --stop-after-init\""
-            self._exec_cmd(install_cmd, ssh, raise_on_error=True)
             
             self._systemd_operation(instance, 'start', ssh=ssh)
             self._create_nginx_file(instance.domain_name_ids, ssh)
