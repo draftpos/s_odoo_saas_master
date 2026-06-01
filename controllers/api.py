@@ -132,7 +132,17 @@ class SaaSAPI(http.Controller):
                     return self._json_response(error="A user with this email already exists (and no db selected to authenticate).")
                 try:
                     # Verify their password to see if we can just log them in
-                    request.session.authenticate(db, email, password)
+                    from contextlib import ExitStack
+                    with ExitStack() as stack:
+                        if not request.db or request.db != db:
+                            cr = stack.enter_context(odoo.registry(db).cursor())
+                            env = odoo.api.Environment(cr, None, {})
+                        else:
+                            env = request.env
+                        
+                        credential = {'login': email, 'password': password, 'type': 'password'}
+                        request.session.authenticate(env, credential)
+                    
                     user = existing_user
                 except Exception:
                     return self._json_response(error="A user with this email already exists.")
@@ -205,7 +215,17 @@ class SaaSAPI(http.Controller):
 
             # Authenticate
             try:
-                uid = request.session.authenticate(db, email, password)
+                from contextlib import ExitStack
+                with ExitStack() as stack:
+                    if not request.db or request.db != db:
+                        cr = stack.enter_context(odoo.registry(db).cursor())
+                        env = odoo.api.Environment(cr, None, {})
+                    else:
+                        env = request.env
+                    
+                    credential = {'login': email, 'password': password, 'type': 'password'}
+                    auth_info = request.session.authenticate(env, credential)
+                    uid = auth_info.get('uid')
             except Exception as e:
                 import traceback
                 _logger.exception("Login failed for %s on db %s", email, db)
