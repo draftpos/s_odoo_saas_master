@@ -367,16 +367,27 @@ class SaaSAPI(http.Controller):
                 # Create instance
                 instance = request.env['saas.odoo.instance'].sudo().create(instance_vals)
 
-                # Auto-deploy
-                try:
-                    instance.action_deploy()
-                except Exception as e:
-                    _logger.exception("Instance deployment error")
-                    return self._json_response(error=f"Instance created but deployment failed: {str(e)}")
+                # Auto-deploy in background
+                import threading
+                import odoo
+                
+                def _deploy_instance_async(db_name, instance_id):
+                    registry = odoo.registry(db_name)
+                    with registry.cursor() as cr:
+                        env = odoo.api.Environment(cr, odoo.SUPERUSER_ID, {})
+                        try:
+                            instance = env['saas.odoo.instance'].browse(instance_id)
+                            instance.action_deploy()
+                            env.cr.commit()
+                        except Exception as e:
+                            _logger.exception("Async deploy failed for instance %s", instance_id)
+                            env.cr.rollback()
+
+                threading.Thread(target=_deploy_instance_async, args=(request.db, instance.id)).start()
 
                 return self._json_response(data={
                     'instance': self._get_instance_data(instance),
-                    'message': 'Instance created and deployed successfully',
+                    'message': 'Instance created successfully. Deployment is running in the background.',
                 })
 
         except AccessDenied as e:
