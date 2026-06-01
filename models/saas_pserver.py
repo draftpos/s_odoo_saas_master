@@ -136,7 +136,14 @@ class PServer(models.Model):
                 self._exec_cmd(f"chown -R {server.pg_user}:{server.pg_user} /home/{instance.technical_name}", ssh)
                 
                 init_cmd = f"sudo -u {server.pg_user} bash -c \"PGPASSWORD='{server.pg_password}' /opt/odoo19/venv/bin/python /opt/odoo19/odoo-bin -c /home/{instance.technical_name}/config/odoo.conf -i {modules_to_install} -d {instance.technical_name} --stop-after-init\""
-                self._exec_cmd(init_cmd, ssh, raise_on_error=True)
+                try:
+                    self._exec_cmd(init_cmd, ssh, raise_on_error=True)
+                except Exception as e:
+                    # Ignore harmless gcc profiling errors from rjsmin exit that cause exit code 255
+                    if "profiling:" in str(e) and "Cannot open" in str(e):
+                        pass
+                    else:
+                        raise e
                 
                 step = 'modules_installed'
                 self._update_deploy_step(instance, step, "Odoo modules initialized successfully.")
