@@ -473,6 +473,74 @@ class SaaSAPI(http.Controller):
             _logger.exception("Instance detail API error")
             return self._json_response(error=str(e))
 
+    @http.route('/api/v1/instances/<int:instance_id>/sso', type='json', auth='public', methods=['POST'], csrf=False)
+    def api_instance_sso(self, instance_id, **kwargs):
+        """Generate a One-Time Token (OTT) magic link for SSO into the instance."""
+        try:
+            partner = self._authenticate()
+
+            instance = request.env['saas.odoo.instance'].sudo().browse(instance_id)
+            if not instance.exists() or instance.partner_id.id != partner.id:
+                return self._json_response(error="Instance not found.")
+
+            if instance.state != 'deploy':
+                return self._json_response(error="Instance is not fully deployed yet. Please wait.")
+
+            # Identify the user making the request from the partner
+            user = request.env['res.users'].sudo().search([('partner_id', '=', partner.id)], limit=1)
+
+            # Generate SSO token
+            token = request.env['saas.sso.token'].sudo().create({
+                'partner_id': partner.id,
+                'user_id': user.id if user else False,
+                'instance_id': instance.id,
+            })
+
+            sso_url = f"{instance.get_instance_url()}/saas/sso/login?token={token.token}"
+            
+            return self._json_response(data={
+                'sso_url': sso_url,
+                'token': token.token
+            })
+
+        except AccessDenied as e:
+            return self._json_response(error=str(e))
+        except Exception as e:
+            _logger.exception("SSO Token Generation error")
+            return self._json_response(error=str(e))
+
+    @http.route('/api/v1/sso/validate', type='json', auth='public', methods=['POST'], csrf=False)
+    def api_sso_validate(self, **kwargs):
+        """Validate a One-Time Token (OTT) - Called by the Tenant Server."""
+        try:
+            token_str = kwargs.get('token')
+            if not token_str:
+                return self._json_response(error="Token is required.")
+
+            token = request.env['saas.sso.token'].sudo().search([('token', '=', token_str)], limit=1)
+            
+            if not token:
+                return self._json_response(error="Invalid or expired token.")
+                
+            from datetime import datetime
+            if token.expiration_date < datetime.now():
+                token.unlink()
+                return self._json_response(error="Token has expired.")
+
+            user_data = {
+                'name': token.user_id.name if token.user_id else token.partner_id.name,
+                'email': token.user_id.login if token.user_id else (token.partner_id.email or ''),
+            }
+
+            # Invalidate/Destroy token after first use!
+            token.unlink()
+
+            return self._json_response(data=user_data)
+
+        except Exception as e:
+            _logger.exception("SSO Token Validation error")
+            return self._json_response(error=str(e))
+
     @http.route('/api/v1/instances/<int:instance_id>/deploy', type='json', auth='public', methods=['POST'], csrf=False)
     def api_instance_deploy(self, instance_id, **kwargs):
         """Deploy an instance that is currently in draft state."""
