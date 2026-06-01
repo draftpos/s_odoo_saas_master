@@ -541,6 +541,37 @@ class SaaSAPI(http.Controller):
             _logger.exception("SSO Token Validation error")
             return self._json_response(error=str(e))
 
+    @http.route('/api/v1/sso/validate_api_key', type='json', auth='public', methods=['POST'], csrf=False)
+    def api_sso_validate_api_key(self, **kwargs):
+        """Validate a Master API Key - Called by the Tenant Server."""
+        try:
+            api_key = kwargs.get('api_key')
+            if not api_key:
+                return self._json_response(error="API key is required.")
+
+            uid = request.env['res.users.apikeys'].sudo()._check_credentials(
+                scope='rpc',
+                key=api_key
+            )
+            
+            if not uid:
+                return self._json_response(error="Invalid Master API key.")
+                
+            user = request.env['res.users'].sudo().browse(uid)
+            if not user or not user.active:
+                return self._json_response(error="User is inactive or deleted.")
+
+            user_data = {
+                'name': user.name,
+                'email': user.login,
+            }
+
+            return self._json_response(data=user_data)
+
+        except Exception as e:
+            _logger.exception("SSO API Key Validation error")
+            return self._json_response(error=str(e))
+
     @http.route('/api/v1/instances/<int:instance_id>/deploy', type='json', auth='public', methods=['POST'], csrf=False)
     def api_instance_deploy(self, instance_id, **kwargs):
         """Deploy an instance that is currently in draft state."""
