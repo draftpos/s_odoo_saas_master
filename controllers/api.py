@@ -473,6 +473,47 @@ class SaaSAPI(http.Controller):
             _logger.exception("Instance detail API error")
             return self._json_response(error=str(e))
 
+    @http.route('/api/v1/instances/<int:instance_id>/deploy', type='json', auth='public', methods=['POST'], csrf=False)
+    def api_instance_deploy(self, instance_id, **kwargs):
+        """Deploy an instance that is currently in draft state."""
+        try:
+            partner = self._authenticate()
+
+            instance = request.env['saas.odoo.instance'].sudo().browse(instance_id)
+            if not instance.exists() or instance.partner_id.id != partner.id:
+                return self._json_response(error="Instance not found.")
+
+            if instance.state != 'draft':
+                return self._json_response(error=f"Instance cannot be deployed from state '{instance.state}'.")
+
+            # Auto-deploy in background
+            import threading
+            import odoo
+            
+            def _deploy_instance_async(db_name, i_id):
+                registry = odoo.registry(db_name)
+                with registry.cursor() as cr:
+                    env = odoo.api.Environment(cr, odoo.SUPERUSER_ID, {})
+                    try:
+                        inst = env['saas.odoo.instance'].browse(i_id)
+                        inst.action_deploy()
+                        env.cr.commit()
+                    except Exception as e:
+                        _logger.exception("Async deploy failed for instance %s", i_id)
+                        env.cr.rollback()
+
+            threading.Thread(target=_deploy_instance_async, args=(request.db, instance.id)).start()
+
+            return self._json_response(data={
+                'message': 'Deployment has been started in the background.',
+            })
+
+        except AccessDenied as e:
+            return self._json_response(error=str(e))
+        except Exception as e:
+            _logger.exception("Instance API deploy error")
+            return self._json_response(error=str(e))
+
     @http.route('/api/v1/instances/<int:instance_id>/start', type='json', auth='public', methods=['POST'], csrf=False)
     def api_instance_start(self, instance_id, **kwargs):
         """Start instance containers."""
