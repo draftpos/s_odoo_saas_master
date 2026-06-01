@@ -127,24 +127,32 @@ class SaaSAPI(http.Controller):
             # Check if user exists
             existing_user = request.env['res.users'].sudo().search([('login', '=', email)], limit=1)
             if existing_user:
-                return self._json_response(error="A user with this email already exists.")
-
-            # Create user
-            user_vals = {
-                'name': name,
-                'login': email,
-                'email': email,
-                'password': password,
-            }
-            if phone:
-                user_vals['phone'] = phone
-
-            user = request.env['res.users'].sudo().with_context(
-                no_reset_password=True,
-                mail_create_nolog=True,
-                mail_create_nosubscribe=True,
-                mail_notrack=True
-            ).create(user_vals)
+                db = kwargs.get('db') or request.db
+                if not db:
+                    return self._json_response(error="A user with this email already exists (and no db selected to authenticate).")
+                try:
+                    # Verify their password to see if we can just log them in
+                    request.session.authenticate(db, email, password)
+                    user = existing_user
+                except Exception:
+                    return self._json_response(error="A user with this email already exists.")
+            else:
+                # Create user
+                user_vals = {
+                    'name': name,
+                    'login': email,
+                    'email': email,
+                    'password': password,
+                }
+                if phone:
+                    user_vals['phone'] = phone
+    
+                user = request.env['res.users'].sudo().with_context(
+                    no_reset_password=True,
+                    mail_create_nolog=True,
+                    mail_create_nosubscribe=True,
+                    mail_notrack=True
+                ).create(user_vals)
 
             # Generate API token
             token = request.env['saas.api.token'].sudo().create({
@@ -187,15 +195,21 @@ class SaaSAPI(http.Controller):
         try:
             email = kwargs.get('email')
             password = kwargs.get('password')
+            db = kwargs.get('db') or request.db
 
             if not email or not password:
                 return self._json_response(error="Email and password are required.")
 
+            if not db:
+                return self._json_response(error="Database not selected. Please pass 'db' in params or X-Odoo-Database header.")
+
             # Authenticate
             try:
-                uid = request.session.authenticate(request.db, email, password)
-            except Exception:
-                return self._json_response(error="Invalid email or password.")
+                uid = request.session.authenticate(db, email, password)
+            except Exception as e:
+                import traceback
+                _logger.exception("Login failed for %s on db %s", email, db)
+                return self._json_response(error=f"Invalid email or password. (Details: {str(e)})")
 
             if not uid:
                 return self._json_response(error="Invalid email or password.")
