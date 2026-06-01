@@ -118,8 +118,11 @@ class SaaSAPI(http.Controller):
             password = kwargs.get('password')
             phone = kwargs.get('phone')
 
-            if not name or not email or not password:
-                return self._json_response(error="Name, email, and password are required.")
+            if not email or not password:
+                return self._json_response(error="Email and password are required.")
+
+            if not name:
+                name = email.split('@')[0] if email else 'User'
 
             # Check if user exists
             existing_user = request.env['res.users'].sudo().search([('login', '=', email)], limit=1)
@@ -299,8 +302,10 @@ class SaaSAPI(http.Controller):
                     return self._json_response(error="Base domain ID is required.")
 
                 # Validate subdomain
-                if subdomain[0].isdigit():
-                    return self._json_response(error="Subdomain cannot start with a number.")
+                if not subdomain.replace('-', '').isalnum():
+                    return self._json_response(error="Subdomain can only contain letters, numbers, and hyphens.")
+                if subdomain[0].isdigit() or subdomain[0] == '-':
+                    return self._json_response(error="Subdomain must start with a letter.")
 
                 # Check domain availability
                 base_domain = request.env['saas.based.domain'].sudo().browse(base_domain_id)
@@ -346,6 +351,7 @@ class SaaSAPI(http.Controller):
                 instance_vals = {
                     'name': subdomain,
                     'based_domain_id': base_domain_id,
+                    'odoo_version_id': odoo_server.odoo_version_id.id if odoo_server.odoo_version_id else request.env['saas.odoo.version'].sudo().search([], limit=1).id,
                     'odoo_server_id': odoo_server.id,
                     'partner_id': partner.id,
                     'trial': is_trial,
