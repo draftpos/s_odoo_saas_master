@@ -624,6 +624,30 @@ class SaaSAPI(http.Controller):
             _logger.exception("Instance API deploy error")
             return self._json_response(error=str(e))
 
+    @http.route('/api/v1/instances/<int:instance_id>/status', type='json', auth='public', methods=['GET', 'POST'], csrf=False)
+    def api_instance_status(self, instance_id, **kwargs):
+        """Get the current deployment status, step, and error message of an instance."""
+        try:
+            partner = self._authenticate()
+            instance = request.env['saas.odoo.instance'].sudo().browse(instance_id)
+            if not instance.exists() or instance.partner_id.id != partner.id:
+                return self._json_response(error="Instance not found.")
+
+            return self._json_response(data={
+                'id': instance.id,
+                'name': instance.name,
+                'state': instance.state,
+                'operation_state': instance.operation_state,
+                'deployment_step': instance.deployment_step,
+                'error_message': instance.error_message,
+                'is_reachable': instance.is_reachable,
+            })
+        except AccessDenied as e:
+            return self._json_response(error=str(e))
+        except Exception as e:
+            _logger.exception("Instance API status error")
+            return self._json_response(error=str(e))
+
     @http.route('/api/v1/instances/<int:instance_id>/start', type='json', auth='public', methods=['POST'], csrf=False)
     def api_instance_start(self, instance_id, **kwargs):
         """Start instance containers."""

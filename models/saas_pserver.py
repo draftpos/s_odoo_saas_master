@@ -103,6 +103,7 @@ class PServer(models.Model):
 
     def _deploy_odoo_instance(self, instance):
         ssh = self._connect()
+        server = instance.odoo_server_id
         try:
             step = instance.deployment_step or 'init'
             self._send_webhook(instance, step, "Resuming deployment...")
@@ -120,7 +121,6 @@ class PServer(models.Model):
             
             if step == 'config_generated':
                 # Create host PostgreSQL database
-                server = instance.odoo_server_id
                 self._exec_cmd(
                     f"PGPASSWORD='{server.pg_password}' createdb -h {server.pg_host} -U {server.pg_user} -O {server.pg_user} {instance.technical_name} 2>/dev/null || true",
                     ssh
@@ -174,6 +174,7 @@ class PServer(models.Model):
 
     def _deploy_odoo_instance_from_template(self, instance):
         ssh = self._connect()
+        server = instance.odoo_server_id
         try:
             step = instance.deployment_step or 'init'
             self._send_webhook(instance, step, "Resuming deployment from template...")
@@ -192,7 +193,6 @@ class PServer(models.Model):
             
             if step == 'config_generated':
                 # Duplicate the template database natively
-                server = instance.odoo_server_id
                 template_db = instance.template_instance_id.technical_name
                 dup_query = f"CREATE DATABASE {instance.technical_name} TEMPLATE {template_db} OWNER {server.pg_user};"
                 dup_cmd = f"PGPASSWORD='{server.pg_password}' psql -h {server.pg_host} -U {server.pg_user} -d postgres -c \"{dup_query}\""
