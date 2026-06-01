@@ -293,7 +293,7 @@ class SaaSAPI(http.Controller):
 
     # ==================== INSTANCE ENDPOINTS ====================
 
-    @http.route('/api/v1/instances', type='json', auth='public', methods=['GET', 'POST'], csrf=False)
+    @http.route(['/api/v1/instances', '/api/v1/instances/list'], type='json', auth='public', methods=['GET', 'POST'], csrf=False)
     def api_instances(self, **kwargs):
         """
         GET: List user's instances
@@ -315,7 +315,7 @@ class SaaSAPI(http.Controller):
         try:
             partner = self._authenticate()
 
-            if request.httprequest.method == 'GET':
+            if request.httprequest.method == 'GET' or 'list' in request.httprequest.path or kwargs.get('action') == 'list':
                 # List instances
                 instances = request.env['saas.odoo.instance'].sudo().search([
                     ('partner_id', '=', partner.id),
