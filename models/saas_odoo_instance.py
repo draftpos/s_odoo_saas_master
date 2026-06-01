@@ -77,6 +77,19 @@ class OdooInstance(models.Model):
         ('run', 'Running'),
         ('stop', 'Stopped')
     ], string='Operation Status', default='draft', readonly=True)
+    
+    deployment_step = fields.Selection([
+        ('init', 'Starting deployment'),
+        ('folders_created', 'Instance directories created'),
+        ('config_generated', 'Configuration generated'),
+        ('db_created', 'Database created'),
+        ('modules_installed', 'Modules installed'),
+        ('services_started', 'Services started'),
+        ('done', 'Deployment complete')
+    ], string='Deployment Step', default='init', readonly=True, help="Tracks the background deployment progress to allow resuming.")
+    
+    error_message = fields.Text(string='Last Deployment Error', readonly=True, help="Captures any SSH or Odoo error during background deployment.")
+    webhook_url = fields.Char(string='Webhook URL', help="URL to send real-time progress updates during deployment.")
     is_reachable = fields.Boolean(string="Is Reachable", default=False, readonly=True)
     is_template = fields.Boolean(string='Is Template?', help="This instance will be used as a template for other instances. "
                                  "Then the database, file store,... of this instance will be copied to the new instance as a template.")

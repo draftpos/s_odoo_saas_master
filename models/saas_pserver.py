@@ -78,43 +78,94 @@ class PServer(models.Model):
         """Return True only if ssh is a live Paramiko SSHClient."""
         return ssh is not None and hasattr(ssh, 'exec_command')
 
+    def _send_webhook(self, instance, step, message, status="in_progress"):
+        """Send real-time progress update to the external webhook."""
+        if not instance.webhook_url:
+            return
+        try:
+            import requests
+            payload = {
+                "instance_id": instance.id,
+                "domain": instance.url or instance.name,
+                "status": status,
+                "current_step": step,
+                "message": message,
+            }
+            requests.post(instance.webhook_url, json=payload, timeout=5)
+        except Exception as e:
+            _logger.warning("Failed to send webhook for instance %s: %s", instance.id, e)
+
+    def _update_deploy_step(self, instance, step, message):
+        """Update the database and fire a webhook."""
+        instance.deployment_step = step
+        instance.env.cr.commit()
+        self._send_webhook(instance, step, message)
+
     def _deploy_odoo_instance(self, instance):
         ssh = self._connect()
         try:
-            self._create_instance_folder(instance, ssh)
-            self._create_odoo_instance_config_file(instance, ssh)
-            self._create_custom_addons(instance.custom_addon_ids, ssh)
-            
-            # Create host PostgreSQL database
-            server = instance.odoo_server_id
-            self._exec_cmd(
-                f"PGPASSWORD='{server.pg_password}' createdb -h {server.pg_host} -U {server.pg_user} -O {server.pg_user} {instance.technical_name} 2>/dev/null || true",
-                ssh
-            )
+            step = instance.deployment_step or 'init'
+            self._send_webhook(instance, step, "Resuming deployment...")
 
-            modules_to_install = 'base'
-            if instance.default_module:
-                modules_to_install += f",{instance.default_module}"
-                
-            self._exec_cmd(f"chown -R {server.pg_user}:{server.pg_user} /home/{instance.technical_name}", ssh)
-                
-            init_cmd = f"sudo -u {server.pg_user} bash -c \"PGPASSWORD='{server.pg_password}' /opt/odoo19/venv/bin/python /opt/odoo19/odoo-bin -c /home/{instance.technical_name}/config/odoo.conf -i {modules_to_install} -d {instance.technical_name} --stop-after-init\""
-            self._exec_cmd(init_cmd, ssh, raise_on_error=True)
+            if step in ['init', 'folders_created']:
+                self._create_instance_folder(instance, ssh)
+                step = 'folders_created'
+                self._update_deploy_step(instance, step, "Instance folders created.")
+
+            if step == 'folders_created':
+                self._create_odoo_instance_config_file(instance, ssh)
+                self._create_custom_addons(instance.custom_addon_ids, ssh)
+                step = 'config_generated'
+                self._update_deploy_step(instance, step, "Odoo configuration generated.")
             
-            self._create_systemd_service_file(instance, ssh)
-            self._systemd_operation(instance, 'start', ssh=ssh)
-            self._create_nginx_file(instance.domain_name_ids, ssh)
-            self._exec_cmd("systemctl reload nginx", ssh)
-            
-            # Post-deployment validation: Verify port is listening
-            http_port = instance.port_ids.filtered(lambda p: p.name == 'http_port')
-            if http_port:
-                port = http_port[0].port
-                verify_cmd = f"for i in {{1..30}}; do ss -tlnp | grep ':{port}' && exit 0; sleep 1; done; exit 1"
-                self._exec_cmd(verify_cmd, ssh, raise_on_error=True)
+            if step == 'config_generated':
+                # Create host PostgreSQL database
+                server = instance.odoo_server_id
+                self._exec_cmd(
+                    f"PGPASSWORD='{server.pg_password}' createdb -h {server.pg_host} -U {server.pg_user} -O {server.pg_user} {instance.technical_name} 2>/dev/null || true",
+                    ssh
+                )
+                step = 'db_created'
+                self._update_deploy_step(instance, step, "PostgreSQL database created.")
+
+            if step == 'db_created':
+                modules_to_install = 'base'
+                if instance.default_module:
+                    modules_to_install += f",{instance.default_module}"
+                    
+                self._exec_cmd(f"chown -R {server.pg_user}:{server.pg_user} /home/{instance.technical_name}", ssh)
                 
+                init_cmd = f"sudo -u {server.pg_user} bash -c \"PGPASSWORD='{server.pg_password}' /opt/odoo19/venv/bin/python /opt/odoo19/odoo-bin -c /home/{instance.technical_name}/config/odoo.conf -i {modules_to_install} -d {instance.technical_name} --stop-after-init\""
+                self._exec_cmd(init_cmd, ssh, raise_on_error=True)
+                
+                step = 'modules_installed'
+                self._update_deploy_step(instance, step, "Odoo modules initialized successfully.")
+
+            if step == 'modules_installed':
+                self._create_systemd_service_file(instance, ssh)
+                self._systemd_operation(instance, 'start', ssh=ssh)
+                self._create_nginx_file(instance.domain_name_ids, ssh)
+                self._exec_cmd("systemctl reload nginx", ssh)
+                
+                step = 'services_started'
+                self._update_deploy_step(instance, step, "Systemd and Nginx services started.")
+
+            if step == 'services_started':
+                # Post-deployment validation: Verify port is listening
+                http_port = instance.port_ids.filtered(lambda p: p.name == 'http_port')
+                if http_port:
+                    port = http_port[0].port
+                    verify_cmd = f"for i in {{1..30}}; do ss -tlnp | grep ':{port}' && exit 0; sleep 1; done; exit 1"
+                    self._exec_cmd(verify_cmd, ssh, raise_on_error=True)
+                
+                step = 'done'
+                self._update_deploy_step(instance, step, "Deployment completed successfully.")
+                self._send_webhook(instance, step, "Deployment fully verified.", status="completed")
+
             ssh.close()
         except Exception as ex:
+            # Error is handled by api.py outer loop, but we can send a failed webhook here
+            self._send_webhook(instance, instance.deployment_step, f"Deployment failed: {str(ex)}", status="failed")
             try:
                 self._revoke_odoo_instance(instance, ssh)
             except Exception:
@@ -124,35 +175,59 @@ class PServer(models.Model):
     def _deploy_odoo_instance_from_template(self, instance):
         ssh = self._connect()
         try:
-            self._create_instance_folder(instance, ssh)
-            self._prepare_instance_folder_from_template(instance, ssh)
-            
-            # Regenerate the configuration file for the new instance so it doesn't use the template's ports or dbfilter
-            self._create_odoo_instance_config_file(instance, ssh)
-            
-            # Duplicate the template database natively
-            server = instance.odoo_server_id
-            template_db = instance.template_instance_id.technical_name
-            dup_query = f"CREATE DATABASE {instance.technical_name} TEMPLATE {template_db} OWNER {server.pg_user};"
-            dup_cmd = f"PGPASSWORD='{server.pg_password}' psql -h {server.pg_host} -U {server.pg_user} -d postgres -c \"{dup_query}\""
-            self._exec_cmd(dup_cmd, ssh)
+            step = instance.deployment_step or 'init'
+            self._send_webhook(instance, step, "Resuming deployment from template...")
 
-            self._create_systemd_service_file(instance, ssh)
-            self._exec_cmd(f"chown -R {server.pg_user}:{server.pg_user} /home/{instance.technical_name}", ssh)
+            if step in ['init', 'folders_created']:
+                self._create_instance_folder(instance, ssh)
+                self._prepare_instance_folder_from_template(instance, ssh)
+                step = 'folders_created'
+                self._update_deploy_step(instance, step, "Instance folders prepared from template.")
+
+            if step == 'folders_created':
+                # Regenerate the configuration file for the new instance so it doesn't use the template's ports or dbfilter
+                self._create_odoo_instance_config_file(instance, ssh)
+                step = 'config_generated'
+                self._update_deploy_step(instance, step, "Odoo configuration regenerated.")
             
-            self._systemd_operation(instance, 'start', ssh=ssh)
-            self._create_nginx_file(instance.domain_name_ids, ssh)
-            self._exec_cmd("systemctl reload nginx", ssh)
+            if step == 'config_generated':
+                # Duplicate the template database natively
+                server = instance.odoo_server_id
+                template_db = instance.template_instance_id.technical_name
+                dup_query = f"CREATE DATABASE {instance.technical_name} TEMPLATE {template_db} OWNER {server.pg_user};"
+                dup_cmd = f"PGPASSWORD='{server.pg_password}' psql -h {server.pg_host} -U {server.pg_user} -d postgres -c \"{dup_query}\""
+                self._exec_cmd(dup_cmd, ssh)
+                step = 'db_created'
+                self._update_deploy_step(instance, step, "Database duplicated from template.")
+
+            if step == 'db_created':
+                self._create_systemd_service_file(instance, ssh)
+                self._exec_cmd(f"chown -R {server.pg_user}:{server.pg_user} /home/{instance.technical_name}", ssh)
+                step = 'modules_installed'
+                self._update_deploy_step(instance, step, "Odoo database ready.")
+
+            if step == 'modules_installed':
+                self._systemd_operation(instance, 'start', ssh=ssh)
+                self._create_nginx_file(instance.domain_name_ids, ssh)
+                self._exec_cmd("systemctl reload nginx", ssh)
+                step = 'services_started'
+                self._update_deploy_step(instance, step, "Systemd and Nginx services started.")
             
-            # Post-deployment validation: Verify port is listening
-            http_port = instance.port_ids.filtered(lambda p: p.name == 'http_port')
-            if http_port:
-                port = http_port[0].port
-                verify_cmd = f"for i in {{1..30}}; do ss -tlnp | grep ':{port}' && exit 0; sleep 1; done; exit 1"
-                self._exec_cmd(verify_cmd, ssh, raise_on_error=True)
+            if step == 'services_started':
+                # Post-deployment validation: Verify port is listening
+                http_port = instance.port_ids.filtered(lambda p: p.name == 'http_port')
+                if http_port:
+                    port = http_port[0].port
+                    verify_cmd = f"for i in {{1..30}}; do ss -tlnp | grep ':{port}' && exit 0; sleep 1; done; exit 1"
+                    self._exec_cmd(verify_cmd, ssh, raise_on_error=True)
                 
+                step = 'done'
+                self._update_deploy_step(instance, step, "Deployment completed successfully.")
+                self._send_webhook(instance, step, "Deployment fully verified.", status="completed")
+
             ssh.close()
         except Exception as ex:
+            self._send_webhook(instance, instance.deployment_step, f"Deployment failed: {str(ex)}", status="failed")
             try:
                 self._revoke_odoo_instance(instance, ssh)
             except Exception:
