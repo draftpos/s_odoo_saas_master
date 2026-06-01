@@ -496,7 +496,7 @@ class SaaSAPI(http.Controller):
                 'instance_id': instance.id,
             })
 
-            sso_url = f"{instance.get_instance_url()}/saas/sso/login?token={token.token}"
+            sso_url = f"{instance.url}/saas/sso/login?token={token.token}"
             
             return self._json_response(data={
                 'sso_url': sso_url,
