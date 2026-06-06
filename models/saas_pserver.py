@@ -124,8 +124,9 @@ class PServer(models.Model):
             
             if step == 'config_generated':
                 # Create host PostgreSQL database
+                port_arg = f"-p {server.pg_port}" if server.pg_port else ""
                 self._exec_cmd(
-                    f"PGPASSWORD='{server.pg_password}' createdb -h {server.pg_host} -U {server.pg_user} -O {server.pg_user} {instance.technical_name} 2>/dev/null || true",
+                    f"PGPASSWORD='{server.pg_password}' createdb -h {server.pg_host} {port_arg} -U {server.pg_user} -O {server.pg_user} {instance.technical_name} 2>/dev/null || true",
                     ssh
                 )
                 step = 'db_created'
@@ -205,7 +206,8 @@ class PServer(models.Model):
                 # Duplicate the template database natively
                 template_db = instance.template_instance_id.technical_name
                 dup_query = f"CREATE DATABASE {instance.technical_name} TEMPLATE {template_db} OWNER {server.pg_user};"
-                dup_cmd = f"PGPASSWORD='{server.pg_password}' psql -h {server.pg_host} -U {server.pg_user} -d postgres -c \"{dup_query}\""
+                port_arg = f"-p {server.pg_port}" if server.pg_port else ""
+                dup_cmd = f"PGPASSWORD='{server.pg_password}' psql -h {server.pg_host} {port_arg} -U {server.pg_user} -d postgres -c \"{dup_query}\""
                 self._exec_cmd(dup_cmd, ssh)
                 step = 'db_created'
                 self._update_deploy_step(instance, step, "Database duplicated from template.")

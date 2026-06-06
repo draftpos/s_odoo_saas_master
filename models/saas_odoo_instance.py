@@ -621,7 +621,7 @@ class OdooInstance(models.Model):
         if section:
             db_configs = {
                 'db_host': self.odoo_server_id.pg_host or 'localhost',
-                'db_port': 5432,
+                'db_port': self.odoo_server_id.pg_port or 5432,
                 'db_user': self.odoo_server_id.pg_user or 'odoo',
                 'db_password': self.odoo_server_id.pg_password or 'odoo',
             }

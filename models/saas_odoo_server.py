@@ -22,6 +22,7 @@ class OdooServer(models.Model):
     odoo_bin_path = fields.Char(string='Odoo Binary Path', default='/usr/bin/odoo-bin', required=True)
     python_path = fields.Char(string='Python Executable Path', default='/usr/bin/python3', required=True)
     pg_host = fields.Char(string='Postgres Host', default='localhost', required=True)
+    pg_port = fields.Integer(string='Postgres Port', default=5432, required=True)
     pg_user = fields.Char(string='Postgres User', default='odoo', required=True)
     pg_password = fields.Char(string='Postgres Password', default='odoo', required=True)
 
