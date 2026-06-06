@@ -381,25 +381,47 @@ class OdooInstance(models.Model):
             r._generate_instance_config()
             r._generate_instance_extra_addons()
             r._generate_instance_domain_name()
-            if r.use_template and r.template_instance_id:
-                r.pserver_id._deploy_odoo_instance_from_template(r)
-            else:
-                r.pserver_id._deploy_odoo_instance(r)
-            if r.partner_id and r.partner_id.email:
-                if r.use_template and r.template_instance_id and r.template_instance_id.deploy_mail_template_id:
-                    r.template_instance_id.deploy_mail_template_id.sudo().send_mail(r.id, force_send=True)
+            
+            try:
+                if r.use_template and r.template_instance_id:
+                    r.pserver_id._deploy_odoo_instance_from_template(r)
                 else:
-                    template_id = self.env.ref('s_odoo_saas_master.deploy_instance_mail_template', raise_if_not_found=False)
-                    if template_id:
-                        template_id.sudo().send_mail(r.id, force_send=True)
-
-        self.write({'state': 'deploy', 'operation_state': 'run', 'buy_now_from_pricing': False})
-        self.domain_name_ids.write({'state': 'deploy'})
-        self.custom_addon_ids.write({'cloned': True})
-        for r in self:
-            if r.template_instance_id:
-                r.action_get_active_users()
-                r.action_get_installed_apps()
+                    r.pserver_id._deploy_odoo_instance(r)
+                if r.partner_id and r.partner_id.email:
+                    if r.use_template and r.template_instance_id and r.template_instance_id.deploy_mail_template_id:
+                        r.template_instance_id.deploy_mail_template_id.sudo().send_mail(r.id, force_send=True)
+                    else:
+                        template_id = self.env.ref('s_odoo_saas_master.deploy_instance_mail_template', raise_if_not_found=False)
+                        if template_id:
+                            template_id.sudo().send_mail(r.id, force_send=True)
+                
+                r.write({'state': 'deploy', 'operation_state': 'run', 'buy_now_from_pricing': False, 'error_message': False})
+                r.domain_name_ids.write({'state': 'deploy'})
+                r.custom_addon_ids.write({'cloned': True})
+                if r.template_instance_id:
+                    r.action_get_active_users()
+                    r.action_get_installed_apps()
+            except Exception as e:
+                # Open a new cursor to save the error_message without rolling it back
+                import odoo
+                new_cr = odoo.registry(self.env.cr.dbname).cursor()
+                try:
+                    new_env = api.Environment(new_cr, self.env.uid, self.env.context)
+                    new_instance = new_env['saas.odoo.instance'].browse(r.id)
+                    new_instance.write({
+                        'error_message': str(e),
+                        'state': 'draft',
+                        'operation_state': 'stop',
+                    })
+                    new_cr.commit()
+                except Exception as db_err:
+                    _logger.exception("Failed to write error message to database: %s", db_err)
+                    new_cr.rollback()
+                finally:
+                    new_cr.close()
+                
+                # Re-raise the exception as a UserError so Odoo displays a clean warning dialog
+                raise UserError(_("Deployment failed: %s") % str(e))
 
     def _action_cancel(self):
         for r in self:
