@@ -468,7 +468,8 @@ class PServer(models.Model):
             for instance in instances:
                 server = instance.odoo_server_id
                 query = 'select count(*) from res_users where share=False and active=True'
-                cmd = f"PGPASSWORD='{server.pg_password}' psql -h {server.pg_host} -U {server.pg_user} -d {instance.technical_name} -t -c \"{query}\""
+                port_arg = f"-p {server.pg_port}" if server.pg_port else ""
+                cmd = f"PGPASSWORD='{server.pg_password}' psql -h {server.pg_host} {port_arg} -U {server.pg_user} -d {instance.technical_name} -t -c \"{query}\""
                 output = self._exec_cmd(cmd, ssh, without_return=False)
                 if not output:
                     continue
@@ -491,7 +492,8 @@ class PServer(models.Model):
                 server = instance.odoo_server_id
                 query = ("select shortdesc,name,write_date from ir_module_module "
                          "where application=true and state='installed'")
-                cmd = f"PGPASSWORD='{server.pg_password}' psql -h {server.pg_host} -U {server.pg_user} -d {instance.technical_name} -t -A -F '|' -c \"{query}\""
+                port_arg = f"-p {server.pg_port}" if server.pg_port else ""
+                cmd = f"PGPASSWORD='{server.pg_password}' psql -h {server.pg_host} {port_arg} -U {server.pg_user} -d {instance.technical_name} -t -A -F '|' -c \"{query}\""
                 output = self._exec_cmd(cmd, ssh, without_return=False)
                 if not output:
                     continue
