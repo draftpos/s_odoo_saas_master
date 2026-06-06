@@ -138,7 +138,7 @@ class PServer(models.Model):
                     
                 self._exec_cmd(f"chown -R {server.pg_user}:{server.pg_user} /home/{instance.technical_name}", ssh)
                 
-                init_cmd = f"sudo -u {server.pg_user} bash -c \"PGPASSWORD='{server.pg_password}' /opt/odoo19/venv/bin/python /opt/odoo19/odoo-bin -c /home/{instance.technical_name}/config/odoo.conf -i {modules_to_install} -d {instance.technical_name} --stop-after-init\""
+                init_cmd = f"sudo -u {server.pg_user} bash -c \"PGPASSWORD='{server.pg_password}' {server.python_path} {server.odoo_bin_path} -c /home/{instance.technical_name}/config/odoo.conf -i {modules_to_install} -d {instance.technical_name} --stop-after-init\""
                 try:
                     self._exec_cmd(init_cmd, ssh, raise_on_error=True)
                 except Exception as e:

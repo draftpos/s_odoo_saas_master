@@ -575,10 +575,12 @@ class OdooInstance(models.Model):
             
             if name == 'addons_path':
                 addons_path = []
+                odoo_base = os.path.dirname(self.odoo_server_id.odoo_bin_path) or '/opt/odoo19'
+                core_addons = os.path.join(odoo_base, 'odoo/addons')
                 if not self.odoo_server_id.extra_addon_ids and not self.custom_addon_ids:
-                    addons_path = ['/opt/odoo19/odoo/addons', '/home/%s/custom-addons' % self.technical_name]
+                    addons_path = [core_addons, '/home/%s/custom-addons' % self.technical_name]
                 else:
-                    addons_path.append('/opt/odoo19/odoo/addons')
+                    addons_path.append(core_addons)
                     if self.odoo_server_id.extra_addon_ids:
                         addons_path += self.odoo_server_id.extra_addon_ids.mapped('source_path')
                     if self.custom_addon_ids:
@@ -710,6 +712,8 @@ class OdooInstance(models.Model):
 
     def _get_systemd_service_file_content(self):
         server = self.odoo_server_id
+        odoo_base = os.path.dirname(server.odoo_bin_path) or '/opt/odoo19'
+        venv_bin = os.path.dirname(server.python_path) or '/opt/odoo19/venv/bin'
         content = f"""[Unit]
 Description=Odoo Instance {self.technical_name}
 After=network.target postgresql.service
@@ -718,9 +722,9 @@ After=network.target postgresql.service
 Type=simple
 User={server.pg_user}
 Group={server.pg_user}
-WorkingDirectory=/opt/odoo19
-Environment="PATH=/opt/odoo19/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-ExecStart=/opt/odoo19/venv/bin/python /opt/odoo19/odoo-bin -c /home/{self.technical_name}/config/odoo.conf
+WorkingDirectory={odoo_base}
+Environment="PATH={venv_bin}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart={server.python_path} {server.odoo_bin_path} -c /home/{self.technical_name}/config/odoo.conf
 Restart=on-failure
 RestartSec=10
 StartLimitBurst=5
