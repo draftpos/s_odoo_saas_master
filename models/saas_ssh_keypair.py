@@ -8,7 +8,12 @@ class SSHKeypair(models.Model):
     _description = "SaaS SSH Key Pair"
 
     name = fields.Char(string='Name', required=True)
-    type = fields.Selection([('rsa', 'RSA')], string='Type', required=True, default='rsa')
+    type = fields.Selection([
+        ('rsa', 'RSA'),
+        ('ecdsa', 'ECDSA'),
+        ('ed25519', 'Ed25519'),
+        ('dsa', 'DSA'),
+    ], string='Type', required=True, default='rsa')
     active = fields.Boolean(string="Active", default=True)
     public_key_id = fields.Many2one('ir.attachment', string='Public Key')
     private_key_id = fields.Many2one('ir.attachment', string='Private Key')
@@ -154,3 +159,34 @@ class SSHKeypair(models.Model):
             )
 
         return text
+
+    def get_private_key_pkey(self):
+        """
+        Returns a loaded Paramiko PKey object from the private key attachment.
+        Tries different key types (RSA, Ed25519, ECDSA, DSA) in memory.
+        """
+        self.ensure_one()
+        pem_text = self.get_private_key_pem()
+
+        import io
+        import paramiko
+
+        key_classes = [
+            paramiko.RSAKey,
+            paramiko.Ed25519Key,
+            paramiko.ECDSAKey,
+            paramiko.DSSKey,
+        ]
+
+        errors = []
+        for key_class in key_classes:
+            try:
+                key_file = io.StringIO(pem_text.strip())
+                return key_class.from_private_key(key_file)
+            except Exception as e:
+                errors.append(f"{key_class.__name__}: {str(e)}")
+
+        raise UserError(
+            "Failed to load SSH private key for '%s'. Errors encountered:\n%s"
+            % (self.name, "\n".join(errors))
+        )

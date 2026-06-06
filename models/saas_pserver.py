@@ -50,12 +50,13 @@ class PServer(models.Model):
 
     def _connect(self):
         managing_ip = self._get_managing_ip()
-        privatekey_file_full_path = self.ssh_keypair_id.private_key_id._full_path(
-            self.ssh_keypair_id.private_key_id.store_fname
-        )
-        if not privatekey_file_full_path:
+        
+        try:
+            pkey = self.ssh_keypair_id.get_private_key_pkey()
+        except Exception as e:
             raise UserError(
-                _("Cannot find attachment path of private key of %s server.") % self.name
+                _("Cannot load private key for server %s.\n\nError: %s")
+                % (self.name, str(e))
             )
 
         ssh = paramiko.SSHClient()
@@ -65,7 +66,7 @@ class PServer(models.Model):
                 managing_ip,
                 username='root',
                 port=self.ssh_port,
-                key_filename=privatekey_file_full_path,
+                pkey=pkey,
             )
         except Exception as e:
             raise UserError(
