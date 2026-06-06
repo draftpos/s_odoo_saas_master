@@ -323,8 +323,9 @@ class PServer(models.Model):
 
         # Drop PostgreSQL database
         server = instance.odoo_server_id
+        port_arg = f"-p {server.pg_port}" if server.pg_port else ""
         self._exec_cmd(
-            f"PGPASSWORD='{server.pg_password}' dropdb -h {server.pg_host} -U {server.pg_user} {instance.technical_name} 2>/dev/null || true",
+            f"PGPASSWORD='{server.pg_password}' dropdb -h {server.pg_host} {port_arg} -U {server.pg_user} {instance.technical_name} 2>/dev/null || true",
             ssh
         )
 
