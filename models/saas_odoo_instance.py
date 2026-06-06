@@ -402,23 +402,18 @@ class OdooInstance(models.Model):
                     r.action_get_active_users()
                     r.action_get_installed_apps()
             except Exception as e:
-                # Open a new cursor to save the error_message without rolling it back
-                import odoo
-                new_cr = odoo.registry(self.env.cr.dbname).cursor()
+                # Rollback current transaction to release locks before writing error state
+                self.env.cr.rollback()
                 try:
-                    new_env = api.Environment(new_cr, self.env.uid, self.env.context)
-                    new_instance = new_env['saas.odoo.instance'].browse(r.id)
-                    new_instance.write({
+                    r.write({
                         'error_message': str(e),
                         'state': 'draft',
                         'operation_state': 'stop',
                     })
-                    new_cr.commit()
+                    self.env.cr.commit()
                 except Exception as db_err:
                     _logger.exception("Failed to write error message to database: %s", db_err)
-                    new_cr.rollback()
-                finally:
-                    new_cr.close()
+                    self.env.cr.rollback()
                 
                 # Re-raise the exception as a UserError so Odoo displays a clean warning dialog
                 raise UserError(_("Deployment failed: %s") % str(e))

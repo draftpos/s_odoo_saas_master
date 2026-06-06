@@ -421,6 +421,16 @@ class SaaSAPI(http.Controller):
                         except Exception as e:
                             _logger.exception("Async deploy failed for instance %s", instance_id)
                             env.cr.rollback()
+                            try:
+                                # Re-fetch instance after rollback to save the error
+                                inst = env['saas.odoo.instance'].browse(instance_id)
+                                inst.write({
+                                    'error_message': str(e),
+                                    'operation_state': 'stop'
+                                })
+                                env.cr.commit()
+                            except Exception:
+                                pass
 
                 threading.Thread(target=_deploy_instance_async, args=(request.db, instance.id)).start()
 
