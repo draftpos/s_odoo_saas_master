@@ -67,6 +67,8 @@ class PServer(models.Model):
                 username='root',
                 port=self.ssh_port,
                 pkey=pkey,
+                allow_agent=False,
+                look_for_keys=False,
             )
         except Exception as e:
             raise UserError(
