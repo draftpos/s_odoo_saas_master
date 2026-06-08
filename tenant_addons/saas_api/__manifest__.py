@@ -1,47 +1,22 @@
+# -*- coding: utf-8 -*-
 {
-    "name": "SaaS API",
-    "version": "19.0.2.0.0",
-    "category": "Sales",
-    "summary": "Production-ready REST API for SaaS tenant instances",
-    "description": """
-SaaS API - Production Ready
-=============================================
-
-Native Odoo session-based REST API for seamless POS synchronization.
-
-**Features:**
-- Simple username/password authentication (no token management)
-- Products CRUD with intelligent SKU matching
-- Customer management with email/phone deduplication
-- Idempotent sales processing (no duplicates)
-- Invoice creation and retrieval for POS display
-- Payment registration and reconciliation
-- Real-time stock queries
-- Comprehensive error logging
-- Graceful handling of missing optional modules
-
-**Workflow:**
-1. POS sends sale -> Odoo creates order, invoice, delivery
-2. POS gets invoice details to show customer
-3. Customer pays -> POS sends payment with invoice reference
-4. Odoo registers and reconciles payment
+    'name': 'SaaS API',
+    'version': '1.0',
+    'category': 'Sales',
+    'summary': 'REST API endpoints for SaaS integration (login, get products, make sale, add item)',
+    'description': """
+        Exposes REST JSON API endpoints for SaaS integrations:
+        - POST /saas_api/login
+        - POST /saas_api/products (and get_products)
+        - POST /saas_api/make_sale
+        - POST /saas_api/add_item
     """,
-    "author": "Havano",
-    "website": "https://www.havano.com",
-    "license": "LGPL-3",
-    "depends": [
-        "base",
-        "product",
-        "sale_management",
-        "account",
-        "stock",
+    'depends': ['sale_management', 'stock', 'purchase', 'account'],
+    'data': [
+        'views/purchase_order_views.xml',
     ],
-    "data": [
-        "security/ir.model.access.csv",
-        "views/api_docs_views.xml",
-        "views/res_users_views.xml",
-    ],
-    "installable": True,
-    "application": False,
-    "auto_install": False,
+    'installable': True,
+    'application': True,
+    'auto_install': False,
+    'license': 'LGPL-3',
 }
