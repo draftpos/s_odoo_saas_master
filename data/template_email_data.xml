@@ -9,7 +9,7 @@
         <field name="email_to">{{ object.partner_id.email_formatted }}</field>
         <field name="body_html" type="html">
             <div>
-                <a href="https://skyerp.net">
+                <a href="https://saas.havano.pro">
                     <img border="0" src="/s_odoo_saas_master/static/src/img/skyerp.png" alt="image" target="_blank" style="width:202px; height: 88px;"/> ​
                 </a>
                 <hr width="100%" style="background-color:#1A82A1; border:none; height:3px; margin: 16px 0px 16px 0px;"/>
@@ -44,7 +44,7 @@
         <field name="email_to">{{ object.partner_id.email_formatted }}</field>
         <field name="body_html" type="html">
             <div>
-                <a href="https://skyerp.net">
+                <a href="https://saas.havano.pro">
                     <img border="0" src="/s_odoo_saas_master/static/src/img/skyerp.png" alt="image" target="_blank" style="width:202px; height: 88px;"/> ​
                 </a>
                 <hr width="100%" style="background-color:#1A82A1; border:none; height:3px; margin: 16px 0px 16px 0px;"/>
@@ -74,7 +74,7 @@
         <field name="email_to">{{ object.partner_id.email_formatted }}</field>
         <field name="body_html" type="html">
             <div>
-                <a href="https://skyerp.net">
+                <a href="https://saas.havano.pro">
                     <img border="0" src="/s_odoo_saas_master/static/src/img/skyerp.png" alt="image" target="_blank" style="width:202px; height: 88px;"/> ​
                 </a>
                 <hr width="100%" style="background-color:#1A82A1; border:none; height:3px; margin: 16px 0px 16px 0px;"/>
@@ -104,7 +104,7 @@
         <field name="email_to">{{ object.partner_id.email_formatted }}</field>
         <field name="body_html" type="html">
             <div>
-                <a href="https://skyerp.net">
+                <a href="https://saas.havano.pro">
                     <img border="0" src="/s_odoo_saas_master/static/src/img/skyerp.png" alt="image" target="_blank" style="width:202px; height: 88px;"/> ​
                 </a>
                 <hr width="100%" style="background-color:#1A82A1; border:none; height:3px; margin: 16px 0px 16px 0px;"/>
@@ -134,7 +134,7 @@
         <field name="email_to">{{ object.partner_id.email_formatted }}</field>
         <field name="body_html" type="html">
             <div>
-                <a href="https://skyerp.net">
+                <a href="https://saas.havano.pro">
                     <img border="0" src="/s_odoo_saas_master/static/src/img/skyerp.png" alt="image" target="_blank" style="width:202px; height: 88px;"/> ​
                 </a>
                 <hr width="100%" style="background-color:#1A82A1; border:none; height:3px; margin: 16px 0px 16px 0px;"/>
@@ -164,7 +164,7 @@
         <field name="email_to">{{ object.partner_id.email_formatted }}</field>
         <field name="body_html" type="html">
             <div>
-                <a href="https://skyerp.net">
+                <a href="https://saas.havano.pro">
                     <img border="0" src="/s_odoo_saas_master/static/src/img/skyerp.png" alt="image" target="_blank" style="width:202px; height: 88px;"/> ​
                 </a>
                 <hr width="100%" style="background-color:#1A82A1; border:none; height:3px; margin: 16px 0px 16px 0px;"/>

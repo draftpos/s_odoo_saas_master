@@ -119,6 +119,13 @@ class PServer(models.Model):
             if step == 'folders_created':
                 self._create_odoo_instance_config_file(instance, ssh)
                 self._create_custom_addons(instance.custom_addon_ids, ssh)
+                
+                # Copy standard tenant SSO and API modules
+                odoo_base = os.path.dirname(server.odoo_bin_path) or '/opt/odoo19'
+                tenant_addons_src = f"{odoo_base}/custom-addons/s_odoo_saas_master/tenant_addons"
+                self._exec_cmd(f"cp -r {tenant_addons_src}/s_odoo_saas_tenant /home/{instance.technical_name}/custom-addons/", ssh, raise_on_error=False)
+                self._exec_cmd(f"cp -r {tenant_addons_src}/saas_api /home/{instance.technical_name}/custom-addons/", ssh, raise_on_error=False)
+                
                 step = 'config_generated'
                 self._update_deploy_step(instance, step, "Odoo configuration generated.")
             
@@ -133,7 +140,7 @@ class PServer(models.Model):
                 self._update_deploy_step(instance, step, "PostgreSQL database created.")
 
             if step == 'db_created':
-                modules_to_install = 'base'
+                modules_to_install = 'base,s_odoo_saas_tenant'
                 if instance.default_module:
                     modules_to_install += f",{instance.default_module}"
                     
@@ -193,6 +200,13 @@ class PServer(models.Model):
             if step in ['init', 'folders_created']:
                 self._create_instance_folder(instance, ssh)
                 self._prepare_instance_folder_from_template(instance, ssh)
+                
+                # Copy standard tenant SSO and API modules
+                odoo_base = os.path.dirname(server.odoo_bin_path) or '/opt/odoo19'
+                tenant_addons_src = f"{odoo_base}/custom-addons/s_odoo_saas_master/tenant_addons"
+                self._exec_cmd(f"cp -r {tenant_addons_src}/s_odoo_saas_tenant /home/{instance.technical_name}/custom-addons/", ssh, raise_on_error=False)
+                self._exec_cmd(f"cp -r {tenant_addons_src}/saas_api /home/{instance.technical_name}/custom-addons/", ssh, raise_on_error=False)
+                
                 step = 'folders_created'
                 self._update_deploy_step(instance, step, "Instance folders prepared from template.")
 
@@ -215,6 +229,14 @@ class PServer(models.Model):
             if step == 'db_created':
                 self._create_systemd_service_file(instance, ssh)
                 self._exec_cmd(f"chown -R {server.pg_user}:{server.pg_user} /home/{instance.technical_name}", ssh)
+                
+                # Ensure the SSO module and standard default modules are installed on the cloned database
+                modules_to_install = 's_odoo_saas_tenant'
+                if instance.default_module:
+                    modules_to_install += f",{instance.default_module}"
+                install_cmd = f"sudo -u {server.pg_user} bash -c \"PGPASSWORD='{server.pg_password}' {server.python_path} {server.odoo_bin_path} -c /home/{instance.technical_name}/config/odoo.conf -i {modules_to_install} -d {instance.technical_name} --stop-after-init\""
+                self._exec_cmd(install_cmd, ssh, raise_on_error=True)
+                
                 step = 'modules_installed'
                 self._update_deploy_step(instance, step, "Odoo database ready.")
 
