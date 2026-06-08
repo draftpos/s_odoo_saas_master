@@ -24,10 +24,10 @@
                 <p><span>Your instance&#160;</span><span><u><span t-out="object.url or ''"></span></u></span><span>&#160;has been initialized successfully</span></p>
                 <ul>
                     <li><strong>URL:&#160;</strong><u><span t-out="object.url or ''"></span></u></li>
-                    <li><strong>Login/Email:&#160;</strong>admin</li>
-                    <li><strong>Password:&#160;</strong>admin</li>
+                    <li><strong>Login/Email:&#160;</strong><span t-out="object.partner_id.email or ''"></span></li>
+                    <li><strong>Password:&#160;</strong>Use your SaaS password</li>
                 </ul>
-                <p>Please change the default password to secure information in your system..</p>
+                <p>You can log in directly using your registered SaaS account credentials.</p>
             </div>
             <div>
                 <div>During use, if you have any questions or need help, please refer to the following links for assistance.</div>

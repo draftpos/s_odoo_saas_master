@@ -156,6 +156,7 @@ class PServer(models.Model):
                     else:
                         raise e
                 
+                self._sync_tenant_credentials(instance, ssh)
                 step = 'modules_installed'
                 self._update_deploy_step(instance, step, "Odoo modules initialized successfully.")
 
@@ -237,6 +238,7 @@ class PServer(models.Model):
                 install_cmd = f"sudo -u {server.pg_user} bash -c \"PGPASSWORD='{server.pg_password}' {server.python_path} {server.odoo_bin_path} -c /home/{instance.technical_name}/config/odoo.conf -i {modules_to_install} -d {instance.technical_name} --stop-after-init\""
                 self._exec_cmd(install_cmd, ssh, raise_on_error=True)
                 
+                self._sync_tenant_credentials(instance, ssh)
                 step = 'modules_installed'
                 self._update_deploy_step(instance, step, "Odoo database ready.")
 
@@ -267,6 +269,61 @@ class PServer(models.Model):
             except Exception:
                 pass
             raise UserError(str(ex))
+
+    def _sync_tenant_credentials(self, instance, ssh):
+        """
+        Synchronize the SaaS Master user's credentials (login and password hash)
+        to the administrator user (ID 2) in the newly created tenant database.
+        """
+        _logger.info("Synchronizing tenant credentials for instance %s", instance.name)
+        if not instance.partner_id:
+            _logger.warning("No partner linked to instance %s, skipping credentials sync.", instance.name)
+            return
+
+        # Find the SaaS master user linked to this partner
+        master_user = self.env['res.users'].sudo().search([('partner_id', '=', instance.partner_id.id)], limit=1)
+        if not master_user and instance.partner_id.email:
+            master_user = self.env['res.users'].sudo().search([('login', '=', instance.partner_id.email)], limit=1)
+
+        if not master_user:
+            _logger.warning("No SaaS Master user found for partner %s, skipping credentials sync.", instance.partner_id.name)
+            return
+
+        # Fetch password hash directly from SaaS Master database
+        self.env.cr.execute("SELECT password FROM res_users WHERE id = %s", [master_user.id])
+        row = self.env.cr.fetchone()
+        password_hash = row[0] if row else None
+
+        if not password_hash:
+            _logger.warning("No password hash found for SaaS Master user %s, skipping password sync.", master_user.login)
+
+        def escape_string(val):
+            if val is None:
+                return 'NULL'
+            return "'" + str(val).replace("'", "''") + "'"
+
+        login_esc = escape_string(master_user.login)
+        name_esc = escape_string(master_user.name)
+        email_esc = escape_string(master_user.email or master_user.login)
+
+        sql_cmds = []
+        if password_hash:
+            pwd_esc = escape_string(password_hash)
+            sql_cmds.append(f"UPDATE res_users SET login = {login_esc}, password = {pwd_esc} WHERE id = 2;")
+        else:
+            sql_cmds.append(f"UPDATE res_users SET login = {login_esc} WHERE id = 2;")
+
+        sql_cmds.append(f"UPDATE res_partner SET name = {name_esc}, email = {email_esc} WHERE id = (SELECT partner_id FROM res_users WHERE id = 2);")
+
+        server = instance.odoo_server_id
+        port_arg = f"-p {server.pg_port}" if server.pg_port else ""
+        psql_cmd = f"PGPASSWORD='{server.pg_password}' psql -h {server.pg_host} {port_arg} -U {server.pg_user} -d {instance.technical_name}"
+
+        try:
+            self._exec_cmd(psql_cmd, ssh, arguments=sql_cmds, raise_on_error=True)
+            _logger.info("Successfully synchronized tenant credentials for instance %s", instance.name)
+        except Exception as e:
+            _logger.warning("Failed to synchronize tenant credentials for instance %s: %s", instance.name, e)
 
     def _prepare_instance_folder_from_template(self, instance, ssh):
         self._exec_cmd("cp -r -a /home/%s/* /home/%s" % (instance.template_instance_id.technical_name, instance.technical_name), ssh)
