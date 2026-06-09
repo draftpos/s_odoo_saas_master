@@ -34,6 +34,9 @@
                 <field name="subdomain"
                 	readonly="state not in ['draft', 'sent'] or saas_order_type != 'buy_new'"
                 	invisible="not is_saas_order or instance_id"/>
+                <field name="creation_mode"
+                	readonly="state not in ['draft', 'sent'] or saas_order_type != 'buy_new'"
+                	invisible="not is_saas_order or instance_id"/>
                 <field name="based_domain_id"
                 	groups="s_odoo_saas_master.group_odoo_saas_user"
                 	readonly="state not in ['draft', 'sent'] or saas_order_type != 'buy_new'"

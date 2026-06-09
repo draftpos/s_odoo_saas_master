@@ -35,6 +35,11 @@
                             company_dependent="1">
                             <field name="resource_package_id"/>
                         </setting>
+                        <setting id="odoo_instance_backup_restore_site" string="Backup Restore Site" 
+                            help="The site/instance to be used as a template for new registrations using the backup restore method."
+                            company_dependent="1">
+                            <field name="backup_restore_instance_id"/>
+                        </setting>
                     </block>
                     <block title="SaaS Sales" name="saas_sale_setting_container">
                         <setting id="odoo_instance_notification_expiration_day" string="Notification Expiration Days" 

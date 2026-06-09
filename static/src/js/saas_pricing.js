@@ -274,6 +274,7 @@ publicWidget.registry.SaasPortalPricing = publicWidget.Widget.extend({
 		const subDomain = this.$('input.openerp_enterprise_pricing_sub_domain').val();
 		const domainId = parseInt(this.$('select.openerp_enterprise_pricing_domain').val());
 		const subscriptionType = this.$('input#yearly_by').val();
+		const creationMode = this.$('input[name="creation_mode"]:checked').val() || 'scratch';
 		const addIds = [];
 		$("input.openerp_enterprise_pricing_app_checkbox:checkbox:checked").each(function() {
 			 addIds.push($(this).attr("id"))			 
@@ -283,6 +284,7 @@ publicWidget.registry.SaasPortalPricing = publicWidget.Widget.extend({
 			sub_domain: subDomain,
 			base_domain_id: domainId,
 			subscription_type: subscriptionType,
+			creation_mode: creationMode,
 			default_app_ids: addIds
 		}
 		

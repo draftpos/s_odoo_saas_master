@@ -12,3 +12,4 @@ class ResConfigSettings(models.TransientModel):
     revoke_instance_day = fields.Integer(related='company_id.revoke_instance_day', readonly=False)
     limit_trial = fields.Integer(related='company_id.limit_trial', readonly=False)
     resource_package_id = fields.Many2one(related='company_id.resource_package_id', readonly=False)
+    backup_restore_instance_id = fields.Many2one(related='company_id.backup_restore_instance_id', readonly=False)

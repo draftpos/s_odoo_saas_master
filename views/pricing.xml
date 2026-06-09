@@ -24,6 +24,23 @@
                   </div>
                   <t t-call="s_odoo_saas_master.domain_picking"/>
                 </div>
+                <div class="openerp_enterprise_pricing_step mb-5" id="choose_creation_mode">
+                  <div class="openerp_enterprise_pricing_step_head">
+                    <h3 class="mt16 mb8">Choose installation
+                      <b>Method</b>
+                    </h3>
+                  </div>
+                  <div class="openerp_enterprise_pricing_step_body d-flex align-items-center py-2">
+                    <div class="form-check form-check-inline mb-0 mr-4">
+                      <input class="form-check-input creation_mode_radio" type="radio" name="creation_mode" id="creation_mode_scratch" value="scratch" checked="checked"/>
+                      <label class="form-check-label ml-2" for="creation_mode_scratch">Create from Scratch</label>
+                    </div>
+                    <div class="form-check form-check-inline mb-0 ml-3">
+                      <input class="form-check-input creation_mode_radio" type="radio" name="creation_mode" id="creation_mode_backup" value="backup_restore"/>
+                      <label class="form-check-label ml-2" for="creation_mode_backup">Restore from Backup (Template)</label>
+                    </div>
+                  </div>
+                </div>
                 <div class="openerp_enterprise_pricing_step mb-5" id="choose_your_user">
                   <div class="openerp_enterprise_pricing_step_head">
                     <h3 class="mt16 mb8">Choose the number of

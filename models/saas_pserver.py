@@ -611,3 +611,69 @@ class PServer(models.Model):
         self._exec_cmd('mkdir -p %s' % backup_dir, ssh)
         self._exec_cmd('chmod 755 %s' % backup_dir, ssh)
         ssh.close()
+
+    def _clear_instance_user_data(self, instance):
+        ssh = self._connect()
+        server = instance.odoo_server_id
+        try:
+            # 1. Stop systemd service
+            self._systemd_operation(instance, 'stop', ssh=ssh)
+            
+            # 2. Drop database
+            port_arg = f"-p {server.pg_port}" if server.pg_port else ""
+            self._exec_cmd(
+                f"PGPASSWORD='{server.pg_password}' dropdb -h {server.pg_host} {port_arg} -U {server.pg_user} {instance.technical_name} 2>/dev/null || true",
+                ssh
+            )
+            
+            # 3. Clear sessions
+            self._exec_cmd(f"rm -rf /home/{instance.technical_name}/odoo-web-data/sessions/* 2>/dev/null || true", ssh)
+            
+            # 4. Create database
+            if instance.use_template and instance.template_instance_id:
+                # Duplicate template database
+                template_db = instance.template_instance_id.technical_name
+                dup_query = f"CREATE DATABASE {instance.technical_name} TEMPLATE {template_db} OWNER {server.pg_user};"
+                dup_cmd = f"PGPASSWORD='{server.pg_password}' psql -h {server.pg_host} {port_arg} -U {server.pg_user} -d postgres -c \"{dup_query}\""
+                self._exec_cmd(dup_cmd, ssh)
+                
+                # Run Odoo standard tenant module install (to make sure it is ready/initialized)
+                modules_to_install = 's_odoo_saas_tenant'
+                if instance.default_module:
+                    modules_to_install += f",{instance.default_module}"
+                install_cmd = f"sudo -u {server.pg_user} bash -c \"PGPASSWORD='{server.pg_password}' {server.python_path} {server.odoo_bin_path} -c /home/{instance.technical_name}/config/odoo.conf -i {modules_to_install} -d {instance.technical_name} --stop-after-init\""
+                self._exec_cmd(install_cmd, ssh, raise_on_error=True)
+            else:
+                # Create empty database
+                self._exec_cmd(
+                    f"PGPASSWORD='{server.pg_password}' createdb -h {server.pg_host} {port_arg} -U {server.pg_user} -O {server.pg_user} {instance.technical_name}",
+                    ssh
+                )
+                # Initialize modules
+                modules_to_install = 'base,s_odoo_saas_tenant'
+                if instance.default_module:
+                    modules_to_install += f",{instance.default_module}"
+                
+                init_cmd = f"sudo -u {server.pg_user} bash -c \"PGPASSWORD='{server.pg_password}' {server.python_path} {server.odoo_bin_path} -c /home/{instance.technical_name}/config/odoo.conf -i {modules_to_install} -d {instance.technical_name} --stop-after-init\""
+                try:
+                    self._exec_cmd(init_cmd, ssh, raise_on_error=True)
+                except Exception as e:
+                    # Ignore harmless gcc profiling errors
+                    if "profiling:" in str(e) and "Cannot open" in str(e):
+                        pass
+                    else:
+                        raise e
+            
+            # 5. Sync tenant credentials
+            self._sync_tenant_credentials(instance, ssh)
+            
+            # 6. Start service
+            self._systemd_operation(instance, 'start', ssh=ssh)
+            
+            ssh.close()
+        except Exception as ex:
+            try:
+                ssh.close()
+            except Exception:
+                pass
+            raise UserError(str(ex))

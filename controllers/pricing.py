@@ -3,6 +3,7 @@ import time
 from odoo import http, _
 from odoo.http import request
 from odoo.tools import groupby
+from odoo.exceptions import ValidationError
 
 # ✅ FIXED v19: controller moved from website_sale to main
 from odoo.addons.website_sale.controllers.main import WebsiteSale
@@ -121,11 +122,12 @@ class Pricing(http.Controller):
             ('based_domain_id', '=', domain_id),
         ], limit=1)
         if instance:
-            error = _("Your sub-domain has already been taken. Please choose another one.")
-            return {
-                'success': False,
-                'error': error,
-            }
+            if instance.is_assigned or instance.state == 'deploy':
+                error = _("Your sub-domain has already been taken. Please choose another one.")
+                return {
+                    'success': False,
+                    'error': error,
+                }
         return {'success': True}
 
     @http.route(['/pricing/check-trial'], type='json', auth='user', website=True)
@@ -139,6 +141,7 @@ class Pricing(http.Controller):
         pricelist = request.website._get_current_pricelist_sudo()
         num_users = int(post.pop('num_users', 1))
         subscription_type = post.pop('price_by', 'yearly')
+        creation_mode = post.pop('creation_mode', 'scratch')
         app_ids = []
         for key, val in post.items():
             if key.startswith('app_') and val == 'on':
@@ -151,6 +154,7 @@ class Pricing(http.Controller):
         post['app_ids'] = app_ids
         post['subscription_type'] = subscription_type
         post['pricelist'] = pricelist
+        post['creation_mode'] = creation_mode
         order = request.website.create_saas_order(post)
         request.session['sale_order_id'] = order.id
         return request.redirect('/shop/checkout?express=1')
@@ -171,6 +175,47 @@ class Pricing(http.Controller):
         instance_vals['default_modules'] = default_modules
         instance_vals['partner'] = request.env.user.partner_id
         instance_vals['trial'] = True
+        
+        # Check if the subdomain already exists in database
+        existing_instance = request.env['saas.odoo.instance'].sudo().search([
+            ('name', '=', instance_vals['sub_domain']),
+            ('based_domain_id', '=', base_domain_id),
+        ], limit=1)
+        
+        if existing_instance:
+            if existing_instance.is_assigned or existing_instance.state == 'deploy':
+                raise ValidationError(_("This subdomain is already taken."))
+                
+            creation_mode = instance_vals.get('creation_mode', 'scratch')
+            use_template = False
+            template_instance_id = False
+            if creation_mode == 'backup_restore':
+                company = request.env.user.partner_id.company_id or request.env.company
+                if company.backup_restore_instance_id:
+                    use_template = True
+                    template_instance_id = company.backup_restore_instance_id.id
+                else:
+                    raise ValidationError(_("The Backup Restore Site is not configured in the SaaS Settings. Please configure it first."))
+
+            expiration_date = request.env['saas.odoo.instance']._get_expiration_date(instance_vals.get('subscription_type'), trial=True)
+            default_module = request.env['saas.odoo.instance']._get_default_modules(default_modules)
+            
+            existing_instance.sudo().write({
+                'partner_id': request.env.user.partner_id.id,
+                'is_assigned': True,
+                'trial': True,
+                'expiration_date': expiration_date,
+                'use_template': use_template,
+                'template_instance_id': template_instance_id,
+                'default_module': default_module,
+                'state': 'draft',
+            })
+            
+            # Clear user data on the physical server
+            existing_instance.pserver_id._clear_instance_user_data(existing_instance)
+            existing_instance.action_deploy()
+            return {'id': existing_instance.id}
+
         instance_vals = request.env['saas.odoo.instance'].sudo()._prepare_instance_val_to_create(instance_vals)
         instance = request.env['saas.odoo.instance'].sudo().create(instance_vals)
         instance.action_deploy()

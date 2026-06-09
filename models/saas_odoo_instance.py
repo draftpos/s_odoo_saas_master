@@ -59,6 +59,7 @@ class OdooInstance(models.Model):
         compute='_compute_custom_addon_ids', store=True, readonly=False)
     default_module = fields.Char(string='Default Modules', help="Modules are separated by commas")
     trial = fields.Boolean(string='Trial')
+    is_assigned = fields.Boolean(string='Assigned', default=False, tracking=True)
     expiration_date = fields.Date(string='Expiration Date', compute='_compute_expiration_date', store=True, readonly=False)
     active_user = fields.Integer(string='Active Users', readonly=True)
     partner_id = fields.Many2one('res.partner', string='Customer')
@@ -136,7 +137,10 @@ class OdooInstance(models.Model):
         for r in self:
             if r.name and r.name[0].isdigit():
                 raise ValidationError(_("Subdomain cannot start with a number."))
-            existed_domain_name = self.env['saas.odoo.instance.domain.name'].search([('name', '=', r.domain_name)], limit=1)
+            existed_domain_name = self.env['saas.odoo.instance.domain.name'].search([
+                ('name', '=', r.domain_name),
+                ('instance_id', '!=', r.id)
+            ], limit=1)
             if existed_domain_name:
                 raise UserError(_("Subdomain %s already belongs to Odoo Instance %s") % (r.name, existed_domain_name.instance_id.name))
 
@@ -911,6 +915,7 @@ WantedBy=multi-user.target
         sub_domain = data.get('sub_domain')
         partner = data.get('partner')
         buy_now_from_pricing = data.get('buy_now_from_pricing', False)
+        creation_mode = data.get('creation_mode', 'scratch')
 
         odoo_version = self._default_odoo_version()
         if not odoo_version:
@@ -927,10 +932,21 @@ WantedBy=multi-user.target
         expiration_date = self._get_expiration_date(subscription_type, trial=trial)
         backup_limit = self._default_backup_limit()
 
+        use_template = False
+        template_instance_id = False
+        if creation_mode == 'backup_restore':
+            company = partner.company_id if partner else self.env.company
+            if company.backup_restore_instance_id:
+                use_template = True
+                template_instance_id = company.backup_restore_instance_id.id
+            else:
+                raise ValidationError(_("The Backup Restore Site is not configured in the SaaS Settings. Please configure it first."))
+
         res = {
             'name': sub_domain,
             'based_domain_id': based_domain.id,
             'partner_id': partner.id or False,
+            'is_assigned': True,
             'default_module': default_module,
             'odoo_version_id': odoo_version.id,
             'odoo_server_id': odoo_server.id,
@@ -939,6 +955,8 @@ WantedBy=multi-user.target
             'subscription_type': subscription_type,
             'expiration_date': expiration_date,
             'buy_now_from_pricing': buy_now_from_pricing,
+            'use_template': use_template,
+            'template_instance_id': template_instance_id,
         }
         return res
 
@@ -1046,3 +1064,19 @@ WantedBy=multi-user.target
 
     def action_update_resource_package(self):
         self.pserver_id._recreate_docker_compose_file(self, update=True)
+
+    def action_unassign_user(self):
+        for r in self:
+            r.write({
+                'partner_id': False,
+                'is_assigned': False,
+            })
+            r.message_post(body=_("User has been unassigned from this site."))
+
+    def action_clear_user_data(self):
+        for r in self:
+            if r.state != 'deploy':
+                raise UserError(_("Only deployed instances can have their user data cleared."))
+            # Call physical server method to clear data on the remote host
+            r.pserver_id._clear_instance_user_data(r)
+            r.message_post(body=_("User data has been cleared on this site."))

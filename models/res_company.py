@@ -15,6 +15,12 @@ class Company(models.Model):
     revoke_instance_day = fields.Integer(string='Revoke Odoo Instance Day', required=True, default=15)
     limit_trial = fields.Integer(string='Maximum Trial per Customer', required=True, default=1)
     resource_package_id = fields.Many2one('saas.resource.package', string='Default Resource Package')
+    backup_restore_instance_id = fields.Many2one(
+        'saas.odoo.instance',
+        string='Backup Restore Site',
+        domain="[('state', '=', 'deploy')]",
+        help="The site/instance to be used as a template for new registrations using the backup restore method."
+    )
 
     @api.model
     def _generate_saas_price_list(self):

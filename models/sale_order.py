@@ -19,6 +19,10 @@ class SaleOrder(models.Model):
     based_domain_id = fields.Many2one('saas.based.domain', string="Based Domain", tracking=True, copy=False,
         default=_default_based_domain, groups="s_odoo_saas_master.group_odoo_saas_user")
     instance_id = fields.Many2one('saas.odoo.instance', string='Odoo Instance')
+    creation_mode = fields.Selection([
+        ('scratch', 'Create from Scratch'),
+        ('backup_restore', 'Restore from Backup'),
+    ], string='Creation Mode', default='scratch', tracking=True)
     is_saas_trial = fields.Boolean(related='instance_id.trial', store=True)
     saas_order_type = fields.Selection([
         ('buy_new', 'Buy New'),
@@ -62,6 +66,48 @@ class SaleOrder(models.Model):
             raise ValidationError(_("Cannot find Based domain to create Odoo instance"))
 
         default_modules = [line.product_id.technical_name for line in self.order_line if not line.product_id.is_saas_user and line.product_id.technical_name]
+        
+        # Check if the subdomain already exists in database
+        existing_instance = self.env['saas.odoo.instance'].sudo().search([
+            ('name', '=', self.subdomain),
+            ('based_domain_id', '=', self.based_domain_id.id),
+        ], limit=1)
+        
+        if existing_instance:
+            if existing_instance.is_assigned or existing_instance.state == 'deploy':
+                raise ValidationError(_("Subdomain %s already belongs to Odoo Instance %s and is active.") % (self.subdomain, existing_instance.name))
+            
+            # Reassign and clear data!
+            creation_mode = self.creation_mode or 'scratch'
+            use_template = False
+            template_instance_id = False
+            if creation_mode == 'backup_restore':
+                company = self.partner_id.company_id or self.env.company
+                if company.backup_restore_instance_id:
+                    use_template = True
+                    template_instance_id = company.backup_restore_instance_id.id
+                else:
+                    raise ValidationError(_("The Backup Restore Site is not configured in the SaaS Settings. Please configure it first."))
+
+            expiration_date = self.env['saas.odoo.instance']._get_expiration_date(self.subscription_type, trial=False)
+            default_module = self.env['saas.odoo.instance']._get_default_modules(default_modules)
+            
+            existing_instance.sudo().write({
+                'partner_id': self.partner_id.id,
+                'is_assigned': True,
+                'trial': False,
+                'expiration_date': expiration_date,
+                'use_template': use_template,
+                'template_instance_id': template_instance_id,
+                'default_module': default_module,
+                'buy_now_from_pricing': self.buy_now_from_pricing,
+                'state': 'draft',
+            })
+            
+            # Clear user data on physical server
+            existing_instance.pserver_id._clear_instance_user_data(existing_instance)
+            return existing_instance
+
         data = {
             'sub_domain': self.subdomain,
             'partner': self.partner_id,
@@ -69,6 +115,7 @@ class SaleOrder(models.Model):
             'subscription_type': self.subscription_type,
             'default_modules': default_modules,
             'buy_now_from_pricing': self.buy_now_from_pricing,
+            'creation_mode': self.creation_mode,
         }
         instance_vals = self.env['saas.odoo.instance']._prepare_instance_val_to_create(data)
         instance = self.env['saas.odoo.instance'].sudo().create(instance_vals)        

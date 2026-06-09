@@ -9,6 +9,7 @@
                 <field name="name"/>
                 <field name="based_domain_id"/>
                 <field name="partner_id"/>
+                <field name="is_assigned" widget="boolean_toggle"/>
                 <field name="odoo_version_id"/>
                 <field name="trial"/>
                 <field name="noindex"/>
@@ -42,6 +43,11 @@
                 	<button string="Backup" type="object" name="action_backup" invisible="operation_state != 'run' or state != 'deploy'"/>
             		<button string="Update/Install Module" type="object" name="action_open_upgrade_module_wizard" invisible="operation_state != 'run' or state != 'deploy'"/>
                 	<button string="Delete" type="object" name="action_cancel" invisible="state in ['draft', 'cancel']" class="btn-danger"/>
+                	<button string="Unassign User" type="object" name="action_unassign_user" class="btn-secondary"
+                		invisible="not is_assigned"/>
+                	<button string="Clear User Data" type="object" name="action_clear_user_data" class="btn-danger"
+                		confirm="Are you sure you want to clear all user data on this site? This will drop and recreate the database."
+                		invisible="state != 'deploy'"/>
                 	<field name="state" widget="statusbar" />
                 </header>
                 <sheet>
@@ -143,6 +149,7 @@
                     		<field name="operation_state" invisible="1"/>
                     		<field name="has_extra" invisible="1"/>
                     		<field name="partner_id" readonly="state != 'draft'"/>
+                    		<field name="is_assigned" widget="boolean_toggle"/>
                     		<field name="url" widget="url"/>
                     		<field name="technical_name"/>
                     		<field name="db_name"/>
