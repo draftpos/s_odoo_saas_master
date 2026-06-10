@@ -143,25 +143,7 @@ class SaaSAPI(http.Controller):
             # Check if user exists
             existing_user = request.env['res.users'].sudo().search([('login', '=', email)], limit=1)
             if existing_user:
-                db = kwargs.get('db') or request.db
-                if not db:
-                    return self._json_response(error="A user with this email already exists (and no db selected to authenticate).")
-                try:
-                    # Verify their password to see if we can just log them in
-                    from contextlib import ExitStack
-                    with ExitStack() as stack:
-                        if not request.db or request.db != db:
-                            cr = stack.enter_context(odoo.registry(db).cursor())
-                            env = odoo.api.Environment(cr, None, {})
-                        else:
-                            env = request.env
-                        
-                        credential = {'login': email, 'password': password, 'type': 'password'}
-                        request.session.authenticate(env, credential)
-                    
-                    user = existing_user
-                except Exception:
-                    raise AccessDenied("A user with this email already exists.")
+                return self._json_response(error="A user with this email is already registered (email is taken).")
             else:
                 # Create user
                 user_vals = {
@@ -288,6 +270,7 @@ class SaaSAPI(http.Controller):
             }
             if instance_data:
                 res_data['instance'] = instance_data
+                res_data['website'] = instance_data.get('url')
 
             return self._json_response(data=res_data)
 
