@@ -322,6 +322,69 @@ class PServer(models.Model):
         except Exception as e:
             _logger.warning("Failed to synchronize tenant credentials for instance %s: %s", instance.name, e)
 
+    def _sync_tenant_credentials_with_password(self, instance, name, email, password_hash, login=None):
+        """
+        Sync the given credentials directly to the tenant database admin user (id=2).
+
+        Unlike _sync_tenant_credentials, this method accepts credentials as arguments
+        rather than querying them from the master DB, making it safe to call from a
+        background thread (where the original ORM cursor may no longer be open).
+
+        Args:
+            instance: saas.odoo.instance record
+            name: display name to set on the tenant res.partner
+            email: email address to set on the tenant res.partner
+            password_hash: Odoo-hashed password string (from res_users.password column)
+            login: login to set on res_users; defaults to email if omitted
+        """
+        if not login:
+            login = email
+
+        ssh = self._connect()
+        try:
+            def escape_string(val):
+                if val is None:
+                    return 'NULL'
+                return "'" + str(val).replace("'", "''") + "'"
+
+            login_esc = escape_string(login)
+            name_esc = escape_string(name)
+            email_esc = escape_string(email)
+
+            sql_cmds = []
+            if password_hash:
+                pwd_esc = escape_string(password_hash)
+                sql_cmds.append(
+                    f"UPDATE res_users SET login = {login_esc}, password = {pwd_esc} WHERE id = 2;"
+                )
+            else:
+                sql_cmds.append(
+                    f"UPDATE res_users SET login = {login_esc} WHERE id = 2;"
+                )
+            sql_cmds.append(
+                f"UPDATE res_partner SET name = {name_esc}, email = {email_esc} "
+                f"WHERE id = (SELECT partner_id FROM res_users WHERE id = 2);"
+            )
+
+            server = instance.odoo_server_id
+            port_arg = f"-p {server.pg_port}" if server.pg_port else ""
+            psql_cmd = (
+                f"PGPASSWORD='{server.pg_password}' psql -h {server.pg_host} "
+                f"{port_arg} -U {server.pg_user} -d {instance.technical_name}"
+            )
+            self._exec_cmd(psql_cmd, ssh, arguments=sql_cmds, raise_on_error=True)
+            _logger.info(
+                "Pool credential sync succeeded for instance %s (login=%s)",
+                instance.name, login
+            )
+        except Exception as e:
+            _logger.warning(
+                "Pool credential sync failed for instance %s: %s",
+                instance.name, e
+            )
+        finally:
+            ssh.close()
+
     def _prepare_instance_folder_from_template(self, instance, ssh):
         server = instance.odoo_server_id
         odoo_user = server.pg_user or 'odoo'

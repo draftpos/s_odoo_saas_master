@@ -907,6 +907,117 @@ WantedBy=multi-user.target
                     instance._action_cancel()
 
     @api.model
+    def _try_claim_pool_instance(self, partner, password_hash, odoo_version_id=None):
+        """
+        Atomically claim the first available unassigned pool instance for a partner.
+
+        A "pool" instance is one that is pre-deployed and waiting for a user:
+          - state = 'deploy'   (already running on the server)
+          - is_assigned = False (unclaimed)
+          - partner_id = False  (no owner)
+
+        Uses a PostgreSQL table-level EXCLUSIVE lock to prevent two simultaneous
+        registrations from claiming the same instance (same pattern as port allocation).
+        The lock is held only for the duration of the claim write, then released
+        via an immediate commit so it doesn't block other operations.
+
+        Credential synchronisation (overwriting the tenant DB admin with the new
+        user's login and hashed password) runs in a background thread so the API
+        response is not delayed by the SSH round-trip.
+
+        Args:
+            partner: res.partner record of the new user
+            password_hash: Odoo-hashed password (from res_users.password) to push
+                           to the tenant admin. Pass None to skip password sync.
+            odoo_version_id: optional int — restrict pool to this Odoo version id
+
+        Returns:
+            saas.odoo.instance record if a pool instance was claimed, else False
+        """
+        import threading
+        import odoo as _odoo
+
+        # --- 1. Acquire exclusive lock (prevents concurrent claims) ---
+        self.env.cr.execute("LOCK TABLE saas_odoo_instance IN EXCLUSIVE MODE")
+
+        # --- 2. Find first available pool instance ---
+        domain = [
+            ('state', '=', 'deploy'),
+            ('is_assigned', '=', False),
+            ('partner_id', '=', False),
+        ]
+        if odoo_version_id:
+            domain.append(('odoo_version_id', '=', odoo_version_id))
+
+        instance = self.search(domain, order='id asc', limit=1)
+        if not instance:
+            # Pool is empty — caller should fall back to fresh deploy
+            return False
+
+        # --- 3. Atomically mark as claimed ---
+        instance.write({
+            'partner_id': partner.id,
+            'is_assigned': True,
+        })
+
+        # Commit immediately so the table lock is released and other requests
+        # are not blocked while we do logging + background work.
+        self.env.cr.commit()
+
+        # --- 4. Audit log on the instance chatter ---
+        try:
+            instance.message_post(
+                body=_(
+                    "Site assigned from pre-deployed pool to %(name)s (%(email)s).",
+                    name=partner.name,
+                    email=partner.email or partner.name,
+                ),
+                subtype_xmlid='mail.mt_note',
+            )
+        except Exception:
+            pass  # Chatter failure must never block the user
+
+        _logger.info(
+            "Pool instance %s (id=%s) claimed by partner %s (id=%s)",
+            instance.name, instance.id, partner.name, partner.id,
+        )
+
+        # --- 5. Sync credentials in background ---
+        if password_hash and instance.pserver_id:
+            db_name = self.env.cr.dbname
+            instance_id = instance.id
+            pserver_id = instance.pserver_id.id
+            partner_name = partner.name
+            partner_email = partner.email or ''
+            partner_login = partner.email or partner.name
+
+            def _bg_sync_creds():
+                registry = _odoo.registry(db_name)
+                with registry.cursor() as cr:
+                    env = _odoo.api.Environment(cr, _odoo.SUPERUSER_ID, {})
+                    try:
+                        inst = env['saas.odoo.instance'].browse(instance_id)
+                        pserver = env['saas.pserver'].browse(pserver_id)
+                        pserver._sync_tenant_credentials_with_password(
+                            inst,
+                            name=partner_name,
+                            email=partner_email,
+                            password_hash=password_hash,
+                            login=partner_login,
+                        )
+                        cr.commit()
+                    except Exception as exc:
+                        _logger.exception(
+                            "Background credential sync failed for pool instance %s: %s",
+                            instance_id, exc,
+                        )
+                        cr.rollback()
+
+            threading.Thread(target=_bg_sync_creds, daemon=True).start()
+
+        return instance
+
+    @api.model
     def _prepare_instance_val_to_create(self, data):
         based_domain = data.get('based_domain')
         default_modules = data.get('default_modules')
