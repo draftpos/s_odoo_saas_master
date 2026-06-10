@@ -219,10 +219,29 @@ class PServer(models.Model):
             if step == 'config_generated':
                 # Duplicate the template database natively
                 template_db = instance.template_instance_id.technical_name
-                dup_query = f"CREATE DATABASE {instance.technical_name} TEMPLATE {template_db} OWNER {server.pg_user};"
                 port_arg = f"-p {server.pg_port}" if server.pg_port else ""
-                dup_cmd = f"PGPASSWORD='{server.pg_password}' psql -h {server.pg_host} {port_arg} -U {server.pg_user} -d postgres -c \"{dup_query}\""
-                self._exec_cmd(dup_cmd, ssh)
+
+                # 1. Disallow connections to the template database
+                allow_false_query = f"ALTER DATABASE {template_db} ALLOW_CONNECTIONS false;"
+                allow_false_cmd = f"PGPASSWORD='{server.pg_password}' psql -h {server.pg_host} {port_arg} -U {server.pg_user} -d postgres -c \"{allow_false_query}\""
+                self._exec_cmd(allow_false_cmd, ssh, raise_on_error=False)
+
+                # 2. Terminate active connections to the template database
+                term_query = f"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '{template_db}' AND pid <> pg_backend_pid();"
+                term_cmd = f"PGPASSWORD='{server.pg_password}' psql -h {server.pg_host} {port_arg} -U {server.pg_user} -d postgres -c \"{term_query}\""
+                self._exec_cmd(term_cmd, ssh, raise_on_error=False)
+
+                try:
+                    # 3. Duplicate the database with raise_on_error=True
+                    dup_query = f"CREATE DATABASE {instance.technical_name} TEMPLATE {template_db} OWNER {server.pg_user};"
+                    dup_cmd = f"PGPASSWORD='{server.pg_password}' psql -h {server.pg_host} {port_arg} -U {server.pg_user} -d postgres -c \"{dup_query}\""
+                    self._exec_cmd(dup_cmd, ssh, raise_on_error=True)
+                finally:
+                    # 4. Re-allow connections to the template database
+                    allow_true_query = f"ALTER DATABASE {template_db} ALLOW_CONNECTIONS true;"
+                    allow_true_cmd = f"PGPASSWORD='{server.pg_password}' psql -h {server.pg_host} {port_arg} -U {server.pg_user} -d postgres -c \"{allow_true_query}\""
+                    self._exec_cmd(allow_true_cmd, ssh, raise_on_error=False)
+
                 step = 'db_created'
                 self._update_deploy_step(instance, step, "Database duplicated from template.")
 
