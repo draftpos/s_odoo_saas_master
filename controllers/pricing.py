@@ -72,11 +72,19 @@ class Pricing(http.Controller):
                 } for product in products]
             })
 
+        templates = request.env['saas.odoo.instance'].sudo().search([
+            ('is_template', '=', True),
+            ('state', '=', 'deploy'),
+        ])
+        default_template_id = request.website.company_id.backup_restore_instance_id.id
+
         values = {
             'domains': domains,
             'pricelist': pricelist,
             'pricelists': pricelists,
             'data': data,
+            'templates': templates,
+            'default_template_id': default_template_id,
         }
         return request.render("s_odoo_saas_master.pricing", values)
 
@@ -142,6 +150,7 @@ class Pricing(http.Controller):
         num_users = int(post.pop('num_users', 1))
         subscription_type = post.pop('price_by', 'yearly')
         creation_mode = post.pop('creation_mode', 'scratch')
+        template_instance_id = post.pop('template_instance_id', False)
         app_ids = []
         for key, val in post.items():
             if key.startswith('app_') and val == 'on':
@@ -155,12 +164,39 @@ class Pricing(http.Controller):
         post['subscription_type'] = subscription_type
         post['pricelist'] = pricelist
         post['creation_mode'] = creation_mode
+        post['template_instance_id'] = template_instance_id
         order = request.website.create_saas_order(post)
         request.session['sale_order_id'] = order.id
         return request.redirect('/shop/checkout?express=1')
 
     @http.route('/saas/instance/create-trial', type='json', auth='user')
     def instance_create(self, instance_vals, **kwargs):
+        # 1. Pool-first check: Try to claim an unassigned instance first!
+        user = request.env.user
+        password_hash = user.password
+        
+        claimed_instance = request.env['saas.odoo.instance'].sudo()._try_claim_pool_instance(
+            partner=user.partner_id,
+            password_hash=password_hash
+        )
+        
+        if claimed_instance:
+            expiration_date = request.env['saas.odoo.instance']._get_expiration_date(
+                instance_vals.get('subscription_type'), trial=True
+            )
+            default_app_ids = instance_vals.get('default_app_ids', [])
+            app_ids = [int(app_id[4:]) for app_id in default_app_ids]
+            apps = request.env['product.product'].sudo().browse(app_ids)
+            default_modules = apps.mapped('technical_name')
+            default_module = request.env['saas.odoo.instance']._get_default_modules(default_modules)
+            
+            claimed_instance.write({
+                'trial': True,
+                'expiration_date': expiration_date,
+                'default_module': default_module,
+            })
+            return {'id': claimed_instance.id}
+
         base_domain_id = instance_vals['base_domain_id']
         base_domain = request.env['saas.based.domain'].sudo().browse(base_domain_id)
 
@@ -190,12 +226,20 @@ class Pricing(http.Controller):
             use_template = False
             template_instance_id = False
             if creation_mode == 'backup_restore':
-                company = request.env.user.partner_id.company_id or request.env.company
-                if company.backup_restore_instance_id:
-                    use_template = True
-                    template_instance_id = company.backup_restore_instance_id.id
-                else:
-                    raise ValidationError(_("The Backup Restore Site is not configured in the SaaS Settings. Please configure it first."))
+                req_template_id = instance_vals.get('template_instance_id')
+                if req_template_id:
+                    template_record = request.env['saas.odoo.instance'].sudo().browse(int(req_template_id))
+                    if template_record.exists() and template_record.is_template and template_record.state == 'deploy':
+                        use_template = True
+                        template_instance_id = template_record.id
+
+                if not use_template:
+                    company = request.env.user.partner_id.company_id or request.env.company
+                    if company.backup_restore_instance_id:
+                        use_template = True
+                        template_instance_id = company.backup_restore_instance_id.id
+                    else:
+                        raise ValidationError(_("The Backup Restore Site is not configured in the SaaS Settings. Please configure it first."))
 
             expiration_date = request.env['saas.odoo.instance']._get_expiration_date(instance_vals.get('subscription_type'), trial=True)
             default_module = request.env['saas.odoo.instance']._get_default_modules(default_modules)

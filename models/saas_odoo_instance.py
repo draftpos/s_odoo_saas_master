@@ -1046,12 +1046,20 @@ WantedBy=multi-user.target
         use_template = False
         template_instance_id = False
         if creation_mode == 'backup_restore':
-            company = partner.company_id if partner else self.env.company
-            if company.backup_restore_instance_id:
-                use_template = True
-                template_instance_id = company.backup_restore_instance_id.id
-            else:
-                raise ValidationError(_("The Backup Restore Site is not configured in the SaaS Settings. Please configure it first."))
+            req_template_id = data.get('template_instance_id')
+            if req_template_id:
+                template_record = self.env['saas.odoo.instance'].sudo().browse(int(req_template_id))
+                if template_record.exists() and template_record.is_template and template_record.state == 'deploy':
+                    use_template = True
+                    template_instance_id = template_record.id
+
+            if not use_template:
+                company = partner.company_id if partner else self.env.company
+                if company.backup_restore_instance_id:
+                    use_template = True
+                    template_instance_id = company.backup_restore_instance_id.id
+                else:
+                    raise ValidationError(_("The Backup Restore Site is not configured in the SaaS Settings. Please configure it first."))
 
         res = {
             'name': sub_domain,

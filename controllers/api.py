@@ -113,6 +113,9 @@ class SaaSAPI(http.Controller):
         }
         """
         try:
+            import re
+            from email.utils import parseaddr
+
             name = kwargs.get('name')
             email = kwargs.get('email')
             password = kwargs.get('password')
@@ -121,7 +124,20 @@ class SaaSAPI(http.Controller):
             if not email or not password:
                 return self._json_response(error="Email and password are required.")
 
-            if not name:
+            # Hardened Validation
+            email = email.strip()
+            name_part, addr_part = parseaddr(email)
+            if not addr_part or '@' not in addr_part:
+                return self._json_response(error="Invalid email format.")
+
+            if len(password) < 8:
+                return self._json_response(error="Password must be at least 8 characters long.")
+
+            if name:
+                name = name.strip()
+                if len(name) > 100 or re.search(r'[\x00-\x1f\x7f-\x9f<>]', name):
+                    return self._json_response(error="Name contains invalid characters or is too long.")
+            else:
                 name = email.split('@')[0] if email else 'User'
 
             # Check if user exists
@@ -145,7 +161,7 @@ class SaaSAPI(http.Controller):
                     
                     user = existing_user
                 except Exception:
-                    return self._json_response(error="A user with this email already exists.")
+                    raise AccessDenied("A user with this email already exists.")
             else:
                 # Create user
                 user_vals = {
@@ -170,14 +186,122 @@ class SaaSAPI(http.Controller):
                 'name': 'Mobile App Token',
             })
 
-            return self._json_response(data={
+            # Check for pool assignment or fallback creation if subdomain is provided
+            subdomain = kwargs.get('subdomain') or kwargs.get('sub_domain')
+            base_domain_id = kwargs.get('base_domain_id')
+            restore = kwargs.get('restore', True)
+            restore_source_site_id = kwargs.get('restore_source_site_id')
+
+            instance_data = {}
+            password_hash = user.password
+
+            claimed_instance = request.env['saas.odoo.instance'].sudo()._try_claim_pool_instance(
+                partner=user.partner_id,
+                password_hash=password_hash
+            )
+
+            if claimed_instance:
+                instance_data = self._get_instance_data(claimed_instance)
+            elif subdomain and base_domain_id:
+                subdomain = subdomain.strip()
+                if len(subdomain) > 100:
+                    raise ValidationError("Subdomain name is too long.")
+                if re.search(r'[\x00-\x1f\x7f-\x9f<>]', subdomain):
+                    raise ValidationError("Subdomain contains invalid characters.")
+                if not subdomain.replace('-', '').isalnum():
+                    raise ValidationError("Subdomain can only contain letters, numbers, and hyphens.")
+                if subdomain[0].isdigit() or subdomain[0] == '-':
+                    raise ValidationError("Subdomain must start with a letter.")
+
+                base_domain = request.env['saas.based.domain'].sudo().browse(base_domain_id)
+                if not base_domain.exists():
+                    raise ValidationError("Invalid base domain ID.")
+
+                full_domain = f"{subdomain}.{base_domain.name}"
+                existing = request.env['saas.odoo.instance'].sudo().search([
+                    ('domain_name', '=', full_domain)
+                ], limit=1)
+                if existing:
+                    raise ValidationError(f"Domain {full_domain} is already taken.")
+
+                odoo_server = request.env['saas.odoo.server'].sudo().search([
+                    ('active', '=', True),
+                ], order='sequence')
+                odoo_server = odoo_server.filtered(lambda s: s.has_available_capacity())[:1]
+                if not odoo_server:
+                    raise ValidationError("No servers available with capacity.")
+
+                creation_mode = 'scratch'
+                use_template = False
+                template_instance_id = False
+                if restore:
+                    creation_mode = 'backup_restore'
+                    if restore_source_site_id:
+                        template_record = request.env['saas.odoo.instance'].sudo().browse(int(restore_source_site_id))
+                        if template_record.exists() and template_record.is_template and template_record.state == 'deploy':
+                            use_template = True
+                            template_instance_id = template_record.id
+                    
+                    if not use_template:
+                        company = user.company_id or request.env.company
+                        if company.backup_restore_instance_id:
+                            use_template = True
+                            template_instance_id = company.backup_restore_instance_id.id
+                        else:
+                            creation_mode = 'scratch'
+
+                instance_vals = {
+                    'name': subdomain,
+                    'based_domain_id': base_domain_id,
+                    'odoo_version_id': odoo_server.odoo_version_id.id if odoo_server.odoo_version_id else request.env['saas.odoo.version'].sudo().search([], limit=1).id,
+                    'odoo_server_id': odoo_server.id,
+                    'partner_id': user.partner_id.id,
+                    'trial': True,
+                    'creation_mode': creation_mode,
+                    'use_template': use_template,
+                    'template_instance_id': template_instance_id,
+                }
+                new_instance = request.env['saas.odoo.instance'].sudo().create(instance_vals)
+
+                import threading
+                import odoo as _odoo
+                
+                def _deploy_instance_async(db_name, instance_id):
+                    registry = _odoo.registry(db_name)
+                    with registry.cursor() as cr:
+                        env = _odoo.api.Environment(cr, _odoo.SUPERUSER_ID, {})
+                        try:
+                            instance = env['saas.odoo.instance'].browse(instance_id)
+                            instance.action_deploy()
+                            env.cr.commit()
+                        except Exception:
+                            env.cr.rollback()
+
+                threading.Thread(target=_deploy_instance_async, args=(request.db, new_instance.id)).start()
+                instance_data = self._get_instance_data(new_instance)
+
+            res_data = {
                 'user_id': user.id,
                 'partner_id': user.partner_id.id,
                 'api_key': token.token,
                 'message': 'Registration successful',
-            })
+            }
+            if instance_data:
+                res_data['instance'] = instance_data
 
+            return self._json_response(data=res_data)
+
+        except AccessDenied as e:
+            ip = request.httprequest.remote_addr
+            _logger.warning("Failed registration/login attempt from IP %s for email %s. Error: %s", ip, email, e)
+            return self._json_response(error=str(e))
+        except ValidationError as e:
+            ip = request.httprequest.remote_addr
+            _logger.warning("Failed registration attempt validation from IP %s for email %s. Error: %s", ip, email, e)
+            return self._json_response(error=str(e))
         except Exception as e:
+            ip = request.httprequest.remote_addr
+            _logger.warning("Failed registration system error from IP %s for email %s. Error: %s", ip, email, e)
             _logger.exception("Registration error")
             return self._json_response(error=str(e))
 
@@ -333,6 +457,8 @@ class SaaSAPI(http.Controller):
                 odoo_server_id = kwargs.get('odoo_server_id')
                 apps = kwargs.get('apps', [])
                 is_trial = kwargs.get('trial', False)
+                restore = kwargs.get('restore', True)
+                restore_source_site_id = kwargs.get('restore_source_site_id')
 
                 if not subdomain:
                     return self._json_response(error="Subdomain is required.")
@@ -340,12 +466,50 @@ class SaaSAPI(http.Controller):
                 if not base_domain_id:
                     return self._json_response(error="Base domain ID is required.")
 
+                # Hardened validation
+                subdomain = subdomain.strip()
+                if len(subdomain) > 100:
+                    return self._json_response(error="Subdomain name is too long.")
+                import re
+                if re.search(r'[\x00-\x1f\x7f-\x9f<>]', subdomain):
+                    return self._json_response(error="Subdomain contains invalid characters.")
+
                 # Validate subdomain
                 if not subdomain.replace('-', '').isalnum():
                     return self._json_response(error="Subdomain can only contain letters, numbers, and hyphens.")
                 if subdomain[0].isdigit() or subdomain[0] == '-':
                     return self._json_response(error="Subdomain must start with a letter.")
 
+                # 1. Pool-first check: Try to claim an unassigned instance first!
+                user = request.env['res.users'].sudo().search([('partner_id', '=', partner.id)], limit=1)
+                password_hash = user.password if user else False
+                
+                claimed_instance = request.env['saas.odoo.instance'].sudo()._try_claim_pool_instance(
+                    partner=partner,
+                    password_hash=password_hash
+                )
+                
+                if claimed_instance:
+                    if is_trial:
+                        trial_days = partner.company_id.instance_trial_day or 15
+                        expiration_date = fields.Date.today() + timedelta(days=trial_days)
+                    else:
+                        expiration_date = request.env['saas.odoo.instance']._get_expiration_date('yearly', trial=False)
+                        
+                    default_module = request.env['saas.odoo.instance']._get_default_modules(apps)
+                    claimed_instance.write({
+                        'trial': is_trial,
+                        'expiration_date': expiration_date,
+                        'default_module': default_module,
+                    })
+                    
+                    return self._json_response(data={
+                        'instance': self._get_instance_data(claimed_instance),
+                        'from_pool': True,
+                        'message': 'Instance assigned successfully from pool.',
+                    })
+
+                # Fallback to fresh/template deployment
                 # Check domain availability
                 base_domain = request.env['saas.based.domain'].sudo().browse(base_domain_id)
                 if not base_domain.exists():
@@ -386,6 +550,25 @@ class SaaSAPI(http.Controller):
                     if trial_count >= trial_limit:
                         return self._json_response(error=f"You have reached the maximum trial limit ({trial_limit}).")
 
+                creation_mode = 'scratch'
+                use_template = False
+                template_instance_id = False
+                if restore:
+                    creation_mode = 'backup_restore'
+                    if restore_source_site_id:
+                        template_record = request.env['saas.odoo.instance'].sudo().browse(int(restore_source_site_id))
+                        if template_record.exists() and template_record.is_template and template_record.state == 'deploy':
+                            use_template = True
+                            template_instance_id = template_record.id
+                    
+                    if not use_template:
+                        company = partner.company_id or request.env.company
+                        if company.backup_restore_instance_id:
+                            use_template = True
+                            template_instance_id = company.backup_restore_instance_id.id
+                        else:
+                            creation_mode = 'scratch'
+
                 # Prepare instance values
                 instance_vals = {
                     'name': subdomain,
@@ -394,6 +577,9 @@ class SaaSAPI(http.Controller):
                     'odoo_server_id': odoo_server.id,
                     'partner_id': partner.id,
                     'trial': is_trial,
+                    'creation_mode': creation_mode,
+                    'use_template': use_template,
+                    'template_instance_id': template_instance_id,
                 }
 
                 if apps:
@@ -408,12 +594,12 @@ class SaaSAPI(http.Controller):
 
                 # Auto-deploy in background
                 import threading
-                import odoo
+                import odoo as _odoo
                 
                 def _deploy_instance_async(db_name, instance_id):
-                    registry = odoo.registry(db_name)
+                    registry = _odoo.registry(db_name)
                     with registry.cursor() as cr:
-                        env = odoo.api.Environment(cr, odoo.SUPERUSER_ID, {})
+                        env = _odoo.api.Environment(cr, _odoo.SUPERUSER_ID, {})
                         try:
                             instance = env['saas.odoo.instance'].browse(instance_id)
                             instance.action_deploy()

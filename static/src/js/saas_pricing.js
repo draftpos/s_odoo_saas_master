@@ -16,6 +16,7 @@ publicWidget.registry.SaasPortalPricing = publicWidget.Widget.extend({
         "click li[data-type='monthly']": '_onSwitchMonthly',
         "click li[data-type='yearly']": '_onSwitchYearly',
         "change input.openerp_enterprise_pricing_users": '_onChangeUsers',
+        "change .creation_mode_radio": '_onChangeCreationMode',
         "click a.openerp_enterprise_pricing_trial": '_onClickTrial',
         "click a.openerp_enterprise_pricing_buy_now": '_onClickBuy',
         "click a.o_free_trial_button": '_onStartFreeTrial',
@@ -200,6 +201,15 @@ publicWidget.registry.SaasPortalPricing = publicWidget.Widget.extend({
         this.usersCount = parseInt($input.val());
         this._recomputePriceBoard();
     },
+
+    _onChangeCreationMode(ev) {
+        const val = this.$('input[name="creation_mode"]:checked').val();
+        if (val === 'backup_restore') {
+            this.$('#template_selection_div').removeClass('d-none');
+        } else {
+            this.$('#template_selection_div').addClass('d-none');
+        }
+    },
 	
 	async _checkDomain() {
         this.$('.odoo_domain_picking_error').empty();
@@ -275,6 +285,7 @@ publicWidget.registry.SaasPortalPricing = publicWidget.Widget.extend({
 		const domainId = parseInt(this.$('select.openerp_enterprise_pricing_domain').val());
 		const subscriptionType = this.$('input#yearly_by').val();
 		const creationMode = this.$('input[name="creation_mode"]:checked').val() || 'scratch';
+		const templateInstanceId = parseInt(this.$('select#template_instance_id').val() || 0);
 		const addIds = [];
 		$("input.openerp_enterprise_pricing_app_checkbox:checkbox:checked").each(function() {
 			 addIds.push($(this).attr("id"))			 
@@ -285,6 +296,7 @@ publicWidget.registry.SaasPortalPricing = publicWidget.Widget.extend({
 			base_domain_id: domainId,
 			subscription_type: subscriptionType,
 			creation_mode: creationMode,
+			template_instance_id: templateInstanceId,
 			default_app_ids: addIds
 		}
 		

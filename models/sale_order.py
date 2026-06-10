@@ -19,6 +19,7 @@ class SaleOrder(models.Model):
     based_domain_id = fields.Many2one('saas.based.domain', string="Based Domain", tracking=True, copy=False,
         default=_default_based_domain, groups="s_odoo_saas_master.group_odoo_saas_user")
     instance_id = fields.Many2one('saas.odoo.instance', string='Odoo Instance')
+    template_instance_id = fields.Many2one('saas.odoo.instance', string='Instance Template')
     creation_mode = fields.Selection([
         ('scratch', 'Create from Scratch'),
         ('backup_restore', 'Restore from Backup'),
@@ -116,6 +117,7 @@ class SaleOrder(models.Model):
             'default_modules': default_modules,
             'buy_now_from_pricing': self.buy_now_from_pricing,
             'creation_mode': self.creation_mode,
+            'template_instance_id': self.template_instance_id.id if self.template_instance_id else False,
         }
         instance_vals = self.env['saas.odoo.instance']._prepare_instance_val_to_create(data)
         instance = self.env['saas.odoo.instance'].sudo().create(instance_vals)        

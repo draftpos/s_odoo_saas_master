@@ -20,6 +20,7 @@ class Website(models.Model):
         app_ids = data.get('app_ids')
         buy_now_from_pricing = data.get('buy_now_from_pricing', False)
         creation_mode = data.get('creation_mode', 'scratch')
+        template_instance_id = data.get('template_instance_id')
         self.ensure_one()
 
         pricelist = pricelist.with_context(subscription_type=subscription_type)
@@ -31,6 +32,7 @@ class Website(models.Model):
             'based_domain_id': domain_id,
             'buy_now_from_pricing': True if buy_now_from_pricing == 'on' else False,
             'creation_mode': creation_mode,
+            'template_instance_id': int(template_instance_id) if template_instance_id else False,
         })
         order_line_vals = []
 
