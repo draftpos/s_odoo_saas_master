@@ -141,9 +141,7 @@ class PServer(models.Model):
                 self._update_deploy_step(instance, step, "PostgreSQL database created.")
 
             if step == 'db_created':
-                modules_to_install = 'base,s_odoo_saas_tenant'
-                if instance.default_module:
-                    modules_to_install += f",{instance.default_module}"
+                modules_to_install = instance.default_module or 's_odoo_saas_tenant'
                     
                 self._exec_cmd(f"chown -R {server.pg_user}:{server.pg_user} /home/{instance.technical_name}", ssh)
                 
@@ -233,9 +231,7 @@ class PServer(models.Model):
                 self._exec_cmd(f"chown -R {server.pg_user}:{server.pg_user} /home/{instance.technical_name}", ssh)
                 
                 # Ensure the SSO module and standard default modules are installed on the cloned database
-                modules_to_install = 's_odoo_saas_tenant'
-                if instance.default_module:
-                    modules_to_install += f",{instance.default_module}"
+                modules_to_install = instance.default_module or 's_odoo_saas_tenant'
                 install_cmd = f"sudo -u {server.pg_user} bash -c \"PGPASSWORD='{server.pg_password}' {server.python_path} {server.odoo_bin_path} -c /home/{instance.technical_name}/config/odoo.conf -i {modules_to_install} -d {instance.technical_name} --stop-after-init\""
                 self._exec_cmd(install_cmd, ssh, raise_on_error=True)
                 
@@ -626,50 +622,8 @@ class PServer(models.Model):
                 ssh
             )
             
-            # 3. Clear sessions
+            # 3. Clear sessions and web data
             self._exec_cmd(f"rm -rf /home/{instance.technical_name}/odoo-web-data/sessions/* 2>/dev/null || true", ssh)
-            
-            # 4. Create database
-            if instance.use_template and instance.template_instance_id:
-                # Duplicate template database
-                template_db = instance.template_instance_id.technical_name
-                dup_query = f"CREATE DATABASE {instance.technical_name} TEMPLATE {template_db} OWNER {server.pg_user};"
-                dup_cmd = f"PGPASSWORD='{server.pg_password}' psql -h {server.pg_host} {port_arg} -U {server.pg_user} -d postgres -c \"{dup_query}\""
-                self._exec_cmd(dup_cmd, ssh)
-                
-                # Run Odoo standard tenant module install (to make sure it is ready/initialized)
-                modules_to_install = 's_odoo_saas_tenant'
-                if instance.default_module:
-                    modules_to_install += f",{instance.default_module}"
-                install_cmd = f"sudo -u {server.pg_user} bash -c \"PGPASSWORD='{server.pg_password}' {server.python_path} {server.odoo_bin_path} -c /home/{instance.technical_name}/config/odoo.conf -i {modules_to_install} -d {instance.technical_name} --stop-after-init\""
-                self._exec_cmd(install_cmd, ssh, raise_on_error=True)
-            else:
-                # Create empty database
-                self._exec_cmd(
-                    f"PGPASSWORD='{server.pg_password}' createdb -h {server.pg_host} {port_arg} -U {server.pg_user} -O {server.pg_user} {instance.technical_name}",
-                    ssh
-                )
-                # Initialize modules
-                modules_to_install = 'base,s_odoo_saas_tenant'
-                if instance.default_module:
-                    modules_to_install += f",{instance.default_module}"
-                
-                init_cmd = f"sudo -u {server.pg_user} bash -c \"PGPASSWORD='{server.pg_password}' {server.python_path} {server.odoo_bin_path} -c /home/{instance.technical_name}/config/odoo.conf -i {modules_to_install} -d {instance.technical_name} --stop-after-init\""
-                try:
-                    self._exec_cmd(init_cmd, ssh, raise_on_error=True)
-                except Exception as e:
-                    # Ignore harmless gcc profiling errors
-                    if "profiling:" in str(e) and "Cannot open" in str(e):
-                        pass
-                    else:
-                        raise e
-            
-            # 5. Sync tenant credentials
-            self._sync_tenant_credentials(instance, ssh)
-            
-            # 6. Start service
-            self._systemd_operation(instance, 'start', ssh=ssh)
-            
             ssh.close()
         except Exception as ex:
             try:

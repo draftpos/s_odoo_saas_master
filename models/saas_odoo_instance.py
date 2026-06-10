@@ -962,9 +962,12 @@ WantedBy=multi-user.target
 
     @api.model
     def _get_default_modules(self, default_modules):
-        if not default_modules:
-            return ''
-        return ','.join(default_modules)
+        modules = ['s_odoo_saas_tenant']
+        if default_modules:
+            for mod in default_modules:
+                if mod and mod not in modules:
+                    modules.append(mod)
+        return ','.join(modules)
 
     @api.model
     def _get_expiration_date(self, subscription_type, trial=False, expiration_date=False):
@@ -1077,6 +1080,8 @@ WantedBy=multi-user.target
         for r in self:
             if r.state != 'deploy':
                 raise UserError(_("Only deployed instances can have their user data cleared."))
-            # Call physical server method to clear data on the remote host
+            # Call physical server method to clear data on the remote host (stops service, drops DB, clears sessions)
             r.pserver_id._clear_instance_user_data(r)
-            r.message_post(body=_("User data has been cleared on this site."))
+            # Fully redeploy/reinitialize the site from template or scratch
+            r.action_deploy()
+            r.message_post(body=_("User data has been cleared and site has been redeployed."))
