@@ -412,6 +412,11 @@ class PServer(models.Model):
         # Copy all files from the template instance
         self._exec_cmd("cp -r -a /home/%s/* %s" % (instance.template_instance_id.technical_name, base), ssh)
 
+        # Rename the template database name's filestore folder to match the new instance's technical name
+        template_db = instance.template_instance_id.technical_name
+        new_db = instance.technical_name
+        self._exec_cmd(f"if [ -d '{base}/odoo-web-data/filestore/{template_db}' ]; then mv '{base}/odoo-web-data/filestore/{template_db}' '{base}/odoo-web-data/filestore/{new_db}'; fi", ssh)
+
         # Remove stale sessions from the template and recreate with correct permissions
         self._exec_cmd("rm -rf %s/odoo-web-data/sessions" % base, ssh)
         self._exec_cmd("mkdir -p %s/odoo-web-data/sessions" % base, ssh)
