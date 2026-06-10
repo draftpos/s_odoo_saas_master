@@ -99,10 +99,22 @@ class OdooInstance(models.Model):
         "It is useful when the login information of this template is different from the default information. "
         "In that case, you need a separate email template for this instance template. "
         "Keep empty to use default.")
-    use_template = fields.Boolean(string='Use Template', help="Use another instance's database, file store,... as a template")
+    @api.model
+    def _default_use_template(self):
+        return True
+
+    @api.model
+    def _default_template_instance_id(self):
+        company = self.env.company
+        if company and company.backup_restore_instance_id:
+            return company.backup_restore_instance_id.id
+        return False
+
+    use_template = fields.Boolean(string='Use Template', default=_default_use_template, help="Use another instance's database, file store,... as a template")
     template_instance_domain_ids = fields.Many2many('saas.odoo.instance', compute='_compute_template_instance_domain_ids',
         help="Technical field used to filter domain 'template_instance_id'")
     template_instance_id = fields.Many2one('saas.odoo.instance', string='Instance Template',
+        default=_default_template_instance_id,
         domain="[('is_template', '=', True), ('state', '=', 'deploy'), ('odoo_version_id', '=', odoo_version_id)]")
 
     # Removed all docker fields
