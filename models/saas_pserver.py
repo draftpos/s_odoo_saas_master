@@ -323,13 +323,47 @@ class PServer(models.Model):
             _logger.warning("Failed to synchronize tenant credentials for instance %s: %s", instance.name, e)
 
     def _prepare_instance_folder_from_template(self, instance, ssh):
-        self._exec_cmd("cp -r -a /home/%s/* /home/%s" % (instance.template_instance_id.technical_name, instance.technical_name), ssh)
-        self._exec_cmd("rm -rf /home/%s/odoo-web-data/sessions" % instance.technical_name, ssh)
+        server = instance.odoo_server_id
+        odoo_user = server.pg_user or 'odoo'
+        base = '/home/%s' % instance.technical_name
+
+        # Copy all files from the template instance
+        self._exec_cmd("cp -r -a /home/%s/* %s" % (instance.template_instance_id.technical_name, base), ssh)
+
+        # Remove stale sessions from the template and recreate with correct permissions
+        self._exec_cmd("rm -rf %s/odoo-web-data/sessions" % base, ssh)
+        self._exec_cmd("mkdir -p %s/odoo-web-data/sessions" % base, ssh)
+
+        # Re-apply ownership and permissions for the whole instance directory
+        self._exec_cmd('chown -R %s:%s %s' % (odoo_user, odoo_user, base), ssh)
+        self._exec_cmd('chmod 755 %s' % base, ssh)
+        self._exec_cmd('chmod 755 %s/odoo-web-data' % base, ssh)
+        self._exec_cmd('chmod 700 %s/odoo-web-data/sessions' % base, ssh)
+        self._exec_cmd('chmod 755 %s/custom-addons' % base, ssh)
+        self._exec_cmd('chmod 755 %s/logs' % base, ssh)
 
     def _create_instance_folder(self, instance, ssh):
+        server = instance.odoo_server_id
+        odoo_user = server.pg_user or 'odoo'
         base = '/home/%s' % instance.technical_name
-        for subdir in ['', '/config', '/odoo-web-data', '/custom-addons', '/logs']:
+
+        # Create all required directories
+        for subdir in ['', '/config', '/odoo-web-data', '/odoo-web-data/sessions', '/custom-addons', '/logs']:
             self._exec_cmd('mkdir -p %s%s' % (base, subdir), ssh)
+
+        # Set correct ownership so the Odoo service (runs as odoo_user) can write
+        self._exec_cmd('chown -R %s:%s %s' % (odoo_user, odoo_user, base), ssh)
+
+        # Set directory permissions:
+        #  - base & sub-dirs: 755 (owner rwx, group/other rx)
+        #  - sessions: 700  (owner rwx only — required by Odoo)
+        #  - logs: 755
+        self._exec_cmd('chmod 755 %s' % base, ssh)
+        self._exec_cmd('chmod 755 %s/config' % base, ssh)
+        self._exec_cmd('chmod 755 %s/odoo-web-data' % base, ssh)
+        self._exec_cmd('chmod 700 %s/odoo-web-data/sessions' % base, ssh)
+        self._exec_cmd('chmod 755 %s/custom-addons' % base, ssh)
+        self._exec_cmd('chmod 755 %s/logs' % base, ssh)
 
     def _create_odoo_instance_config_file(self, instance, ssh):
         file_content = self.env['saas.odoo.instance.config']._get_config_file_content(instance)
@@ -622,8 +656,14 @@ class PServer(models.Model):
                 ssh
             )
             
-            # 3. Clear sessions and web data
-            self._exec_cmd(f"rm -rf /home/{instance.technical_name}/odoo-web-data/sessions/* 2>/dev/null || true", ssh)
+            # 3. Clear sessions and web data, then recreate with correct permissions
+            odoo_user = server.pg_user or 'odoo'
+            base = f"/home/{instance.technical_name}"
+            self._exec_cmd(f"rm -rf {base}/odoo-web-data/sessions 2>/dev/null || true", ssh)
+            self._exec_cmd(f"mkdir -p {base}/odoo-web-data/sessions", ssh)
+            self._exec_cmd(f"chown -R {odoo_user}:{odoo_user} {base}/odoo-web-data", ssh)
+            self._exec_cmd(f"chmod 755 {base}/odoo-web-data", ssh)
+            self._exec_cmd(f"chmod 700 {base}/odoo-web-data/sessions", ssh)
             ssh.close()
         except Exception as ex:
             try:
