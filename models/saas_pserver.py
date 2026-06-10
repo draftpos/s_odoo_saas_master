@@ -242,6 +242,15 @@ class PServer(models.Model):
                     allow_true_cmd = f"PGPASSWORD='{server.pg_password}' psql -h {server.pg_host} {port_arg} -U {server.pg_user} -d postgres -c \"{allow_true_query}\""
                     self._exec_cmd(allow_true_cmd, ssh, raise_on_error=False)
 
+                # 5. Clear compiled assets from the cloned database to force Odoo to rebuild them,
+                # and update the web.base.url system parameter to match the new instance URL.
+                sql_updates = [
+                    "DELETE FROM ir_attachment WHERE url LIKE '/web/assets/%';",
+                    f"UPDATE ir_config_parameter SET value = '{instance.url}' WHERE key = 'web.base.url';"
+                ]
+                update_cmd = f"PGPASSWORD='{server.pg_password}' psql -h {server.pg_host} {port_arg} -U {server.pg_user} -d {instance.technical_name}"
+                self._exec_cmd(update_cmd, ssh, arguments=sql_updates, raise_on_error=False)
+
                 step = 'db_created'
                 self._update_deploy_step(instance, step, "Database duplicated from template.")
 
