@@ -431,7 +431,7 @@ class SaaSAPI(http.Controller):
             if not db:
                 return self._json_response(error="Database not selected. Please pass 'db' in params or X-Odoo-Database header.")
 
-            # Authenticate
+            # Find the user first to check active and verified status
             try:
                 from contextlib import ExitStack
                 with ExitStack() as stack:
@@ -440,12 +440,25 @@ class SaaSAPI(http.Controller):
                         env = odoo.api.Environment(cr, None, {})
                     else:
                         env = request.env
+
+                    # Search including inactive users
+                    user_record = env['res.users'].sudo().with_context(active_test=False).search([('login', '=', email)], limit=1)
+                    if not user_record:
+                        return self._json_response(error="Invalid email or password.")
                     
+                    if not user_record.active:
+                        return self._json_response(error="Your account is deactivated. Please contact support.")
+                    
+                    if not user_record.partner_id.is_email_verified:
+                        return self._json_response(error="Your email is not verified. Please check your email for the verification link.")
+                    
+                    # Authenticate
                     credential = {'login': email, 'password': password, 'type': 'password'}
                     auth_info = request.session.authenticate(env, credential)
                     uid = auth_info.get('uid')
+            except AccessDenied:
+                return self._json_response(error="Invalid email or password.")
             except Exception as e:
-                import traceback
                 _logger.exception("Login failed for %s on db %s", email, db)
                 return self._json_response(error=f"Invalid email or password. (Details: {str(e)})")
 
@@ -466,12 +479,20 @@ class SaaSAPI(http.Controller):
                     'name': 'Mobile App Token',
                 })
 
+            instance = request.env['saas.odoo.instance'].sudo().search([
+                ('partner_id', '=', user.partner_id.id),
+                ('state', '=', 'deploy'),
+            ], limit=1)
+            site_url = instance.url if instance else ""
+
             return self._json_response(data={
                 'user_id': user.id,
                 'partner_id': user.partner_id.id,
                 'api_key': token.token,
                 'name': user.name,
-                'email': user.email,
+                'email': user.email or user.login,
+                'site': site_url,
+                'active': user.active,
             })
 
         except Exception as e:
