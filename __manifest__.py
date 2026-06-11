@@ -63,7 +63,6 @@
         'views/account_move_views.xml',
         'views/saas_resource_package_views.xml',
         'views/saas_plan_views.xml',
-        'views/pricing_plans.xml',
     ],
     'assets': {
         'web.assets_frontend': [
