@@ -34,43 +34,31 @@ class Pricing(http.Controller):
         partner = request.env.user.partner_id
         request.update_context(pricelist=pricelist.id, partner=partner)
 
-        domains = request.env['saas.based.domain'].sudo().search([])
-
-        ProductObj = request.env['product.product'].sudo()
-
-        data = {
-            'user': {},
-            'categs': []
-        }
-        user_product = request.env.ref('s_odoo_saas_master.product_saas_user').sudo()
-        data['user'].update({
-            'id': user_product.id,
-            'monthly_price': pricelist.with_context(subscription_type='monthly')._get_product_price(user_product, 1, partner),
-            'yearly_price': pricelist.with_context(subscription_type='yearly')._get_product_price(user_product, 1, partner) / 12,
-        })
-        all_products = ProductObj.search([
-            ('is_published', '=', True),
-            ('can_be_user_app', '=', True),
-            ('is_saas_user', '=', False),
-        ], order='website_sequence, id')
-
-        # ✅ FIXED v19: groupby returns an iterator of (key, list) tuples — convert products to list
-        for cate, products in groupby(all_products, key=lambda p: p.ecom_category_id):
-            products = list(products)
-            if not products:
-                continue
-            data['categs'].append({
-                'id': cate.id,
-                'name': cate.name,
-                'apps': [{
-                    'id': product.id,
-                    'name': product.name,
-                    'tech_name': product.technical_name,
-                    'image': request.website.image_url(product, 'image_256'),
-                    'monthly_price': pricelist.with_context(subscription_type='monthly')._get_product_price(product, 1),
-                    'yearly_price': pricelist.with_context(subscription_type='yearly')._get_product_price(product, 1) / 12,
-                } for product in products]
+        plans = request.env['saas.plan'].sudo().search([('active', '=', True)], order='sequence, id')
+        
+        plan_data = []
+        for plan in plans:
+            monthly_price = 0.0
+            yearly_price = 0.0
+            
+            if plan.monthly_product_id:
+                monthly_price = pricelist.with_context(subscription_type='monthly')._get_product_price(plan.monthly_product_id, 1, partner=partner)
+            if plan.yearly_product_id:
+                yearly_price = pricelist.with_context(subscription_type='yearly')._get_product_price(plan.yearly_product_id, 1, partner=partner)
+                
+            plan_data.append({
+                'id': plan.id,
+                'name': plan.name,
+                'description': plan.description,
+                'limit_pos_terminals': plan.limit_pos_terminals,
+                'limit_users': plan.limit_users,
+                'monthly_product_id': plan.monthly_product_id.id if plan.monthly_product_id else False,
+                'yearly_product_id': plan.yearly_product_id.id if plan.yearly_product_id else False,
+                'monthly_price': monthly_price,
+                'yearly_price': yearly_price,
             })
+
+        domains = request.env['saas.based.domain'].sudo().search([])
 
         templates = request.env['saas.odoo.instance'].sudo().search([
             ('is_template', '=', True),
@@ -78,13 +66,22 @@ class Pricing(http.Controller):
         ])
         default_template_id = request.website.company_id.backup_restore_instance_id.id
 
+        # Check if we are upgrading/downgrading an existing instance
+        instance_id = post.get('instance_id')
+        instance = False
+        if instance_id:
+            instance = request.env['saas.odoo.instance'].sudo().browse(int(instance_id))
+            if not instance.exists() or instance.partner_id.id != request.env.user.partner_id.id:
+                instance = False
+
         values = {
+            'plans': plan_data,
             'domains': domains,
             'pricelist': pricelist,
             'pricelists': pricelists,
-            'data': data,
             'templates': templates,
             'default_template_id': default_template_id,
+            'instance': instance,
         }
         return request.render("s_odoo_saas_master.pricing", values)
 
@@ -147,25 +144,49 @@ class Pricing(http.Controller):
     @http.route(['/pricing/checkout'], type='http', methods=['POST'], auth="public", website=True)
     def checkout(self, **post):
         pricelist = request.website._get_and_cache_current_pricelist()
-        num_users = int(post.pop('num_users', 1))
-        subscription_type = post.pop('price_by', 'yearly')
-        creation_mode = post.pop('creation_mode', 'scratch')
-        template_instance_id = post.pop('template_instance_id', False)
-        app_ids = []
-        for key, val in post.items():
-            if key.startswith('app_') and val == 'on':
-                app_id = int(key[4:])
-                app_ids.append(app_id)
+        subscription_type = post.get('price_by', 'yearly')
+        creation_mode = post.get('creation_mode', 'scratch')
+        template_instance_id = post.get('template_instance_id', False)
+        plan_id = post.get('plan_id')
+        instance_id = post.get('instance_id')
 
-        post['partner'] = request.env.user.partner_id
-        post['domain_id'] = post.get('domain')
-        post['users_count'] = num_users
-        post['app_ids'] = app_ids
-        post['subscription_type'] = subscription_type
-        post['pricelist'] = pricelist
-        post['creation_mode'] = creation_mode
-        post['template_instance_id'] = template_instance_id
-        order = request.website.create_saas_order(post)
+        checkout_vals = {
+            'subscription_type': subscription_type,
+            'pricelist': pricelist,
+            'partner': request.env.user.partner_id,
+            'sub_domain': post.get('sub_domain'),
+            'domain_id': post.get('domain'),
+            'creation_mode': creation_mode,
+            'template_instance_id': template_instance_id,
+        }
+
+        if instance_id:
+            if request.session.uid is False:
+                return request.redirect('/web/login?redirect=' + request.httprequest.path + '?instance_id=' + str(instance_id))
+            instance = request.env['saas.odoo.instance'].sudo().browse(int(instance_id))
+            if not instance.exists() or instance.partner_id.id != request.env.user.partner_id.id:
+                return request.redirect('/my/saas/odoo-instances')
+            checkout_vals.update({
+                'instance_id': instance.id,
+                'sub_domain': instance.name,
+                'domain_id': instance.based_domain_id.id,
+            })
+
+        if plan_id:
+            checkout_vals['plan_id'] = int(plan_id)
+        else:
+            num_users = int(post.get('num_users', 1))
+            app_ids = []
+            for key, val in post.items():
+                if key.startswith('app_') and val == 'on':
+                    app_id = int(key[4:])
+                    app_ids.append(app_id)
+            checkout_vals.update({
+                'users_count': num_users,
+                'app_ids': app_ids,
+            })
+
+        order = request.website.create_saas_order(checkout_vals)
         request.session['sale_order_id'] = order.id
         return request.redirect('/shop/checkout?express=1')
 
