@@ -12,51 +12,53 @@ const mainComponentRegistry = registry.category("main_components");
 publicWidget.registry.SaasPortalPricing = publicWidget.Widget.extend({
 	selector: 'form.openerp_enterprise_pricing_form',
     events: {
-        'click .openerp_enterprise_pricing_app': '_onToggleApp',
+        'click .openerp_enterprise_pricing_plan_card': '_onSelectPlanCard',
+        'click .btn-select-plan-action': '_onSelectPlanCard',
         "click li[data-type='monthly']": '_onSwitchMonthly',
         "click li[data-type='yearly']": '_onSwitchYearly',
-        "change input.openerp_enterprise_pricing_users": '_onChangeUsers',
         "change .creation_mode_radio": '_onChangeCreationMode',
-        "click a.openerp_enterprise_pricing_trial": '_onClickTrial',
         "click a.openerp_enterprise_pricing_buy_now": '_onClickBuy',
-        "click a.o_free_trial_button": '_onStartFreeTrial',
     },
 
     init() {
         this._super.apply(this, arguments);
-		this.rpc = rpc
+		this.rpc = rpc;
 		this.notification = this.bindService("notification");
 		this.session = session;
         this.subscriptionType = 'yearly';
-        this.usersCount = 1;
-        this.appsList = new Set();
-        this.appsCount = 0;
-        this.monthlyPricelist = {};
-        this.yearlyPricelist = {};
-        this.pricelistId = false;
+        this.selectedPlanId = null;
+        this.plans = {};
         this.currency = {};
+        this.pricelistId = false;
     },
 
     start() {
         this.pricelistId = parseInt(this.$('.openerp_enterprise_pricing_pricelist').data('pricelist'));
+        this._loadPlansFromDOM();
         this._getPriceList();
         this._super.apply(this, arguments);
     },
+
+    _loadPlansFromDOM() {
+        const self = this;
+        this.$('.openerp_enterprise_pricing_plan_card').each(function() {
+            const $card = $(this);
+            const planId = parseInt($card.data('plan-id'));
+            self.plans[planId] = {
+                id: planId,
+                name: $card.data('plan-name'),
+                monthlyPrice: parseFloat($card.data('monthly-price') || 0.0),
+                yearlyPrice: parseFloat($card.data('yearly-price') || 0.0),
+            };
+        });
+    },
 	
 	formatNumber(num) {
-        return parseFloat((num).toFixed(this.currency.decimal_places)).toLocaleString();
+        return parseFloat((num).toFixed(this.currency.decimal_places || 2)).toLocaleString();
     },
     
     formatPrice(num) {
-        const formattedNumber = this.formatNumber(num);
-        if (this.currency.position === 'before') {
-            return this.currency.symbol + ' ' + formattedNumber;
-        } else {
-            return formattedNumber + ' ' + this.currency.symbol;
-        }
-    },
-	
-	formatPrice(num) {
+        if (!this.currency.symbol) return num.toFixed(2);
         const formattedNumber = this.formatNumber(num);
         if (this.currency.position === 'before') {
             return this.currency.symbol + ' ' + formattedNumber;
@@ -67,138 +69,104 @@ publicWidget.registry.SaasPortalPricing = publicWidget.Widget.extend({
 	
 	async _getPriceList() {		
 		var pricelist = await this.rpc('/pricing/get-saas-pricelist', {pricelist_id: this.pricelistId});
-		this.monthlyPricelist = pricelist.monthly_pricelist;
-        this.yearlyPricelist = pricelist.yearly_pricelist;
         this.currency = pricelist.currency;
         this._recomputePriceBoard();     
     },
 	
 	_recomputePriceBoard() {
-        var priceData = this._computePriceData();
-        this.$('.openerp_enterprise_pricing_users_num').text(this.usersCount);
-        this.$('.openerp_enterprise_pricing_apps_num').text(this.appsCount);
-        
-        // Update the user input price display
-        var userPrice = this._getUserPrice();
-        if (this.subscriptionType === 'monthly') {
-            this.$('.openerp_enterprise_pricing_user_amount_monthly').text(this.formatPrice(userPrice));
-        } else {
-            this.$('.openerp_enterprise_pricing_user_amount_yearly').text(this.formatPrice(userPrice));
+        if (!this.selectedPlanId) {
+            this.$('.openerp_enterprise_pricing_plan_name').text(_t("None"));
+            this.$('.openerp_enterprise_pricing_price_monthly').text(this.formatPrice(0.0));
+            this.$('.openerp_enterprise_pricing_price_yearly').text(this.formatPrice(0.0));
+            this.$('.openerp_enterprise_pricing_price_yearly_in_year').text(this.formatPrice(0.0));
+            return;
         }
-        
+
+        const plan = this.plans[this.selectedPlanId];
+        if (!plan) return;
+
+        this.$('.openerp_enterprise_pricing_plan_name').text(plan.name);
+
         if (this.subscriptionType === 'monthly') {
-            this.$('.openerp_enterprise_pricing_users_price_monthly').text(this.formatPrice(priceData.usersAmount));
-            this.$('.openerp_enterprise_pricing_apps_price_monthly').text(this.formatPrice(priceData.appsAmount));
-            this.$('.openerp_enterprise_pricing_price_monthly').text(this.formatPrice(priceData.usersAmount + priceData.appsAmount));
+            this.$('.openerp_enterprise_pricing_price_monthly').text(this.formatPrice(plan.monthlyPrice));
         } else {
-            this.$('.openerp_enterprise_pricing_users_price_yearly').text(this.formatPrice(priceData.usersAmount));
-            this.$('.openerp_enterprise_pricing_apps_price_yearly').text(this.formatPrice(priceData.appsAmount));
-            this.$('.openerp_enterprise_pricing_price_yearly').text(this.formatPrice(priceData.usersAmount + priceData.appsAmount));
-            this.$('.openerp_enterprise_pricing_price_yearly_in_year').text(this.formatPrice((priceData.usersAmount + priceData.appsAmount) * 12));
+            this.$('.openerp_enterprise_pricing_price_yearly').text(this.formatPrice(plan.yearlyPrice / 12));
+            this.$('.openerp_enterprise_pricing_price_yearly_in_year').text(this.formatPrice(plan.yearlyPrice));
         }
     },
 	
-	_computePriceData() {
-        let userPrice = this._getUserPrice();
-        var usersAmount = this.usersCount * userPrice;
-        var appsAmount = 0;
-        var self = this;
-        this.appsList.forEach(function (appId, value2, set) {
-            appsAmount = appsAmount + self._getAppPrice(appId);
-        });
-        return {
-            usersAmount: usersAmount,
-            appsAmount: appsAmount,
-        }
-    },
-	
-	_getUserPrice() {
-        var userId = parseInt(this.$('input.openerp_enterprise_pricing_users').data('app_id'));
-        var price;
-        if (this.subscriptionType === 'monthly') {
-            price = this.monthlyPricelist[userId] || 0;
-        } else {
-            price = this.yearlyPricelist[userId] / 12 || 0;
-        }
-        return price;
-    },
-	
-	_getAppPrice(appId) {
-        var price;
-        if (this.subscriptionType === 'monthly') {
-            price = this.monthlyPricelist[appId] || 0;
-        } else {
-            price = this.yearlyPricelist[appId] / 12 || 0;
-        }
-        return price;
-    },
-	
-	async _onToggleApp(ev) {
+	async _onSelectPlanCard(ev) {
         ev.preventDefault();
         ev.stopPropagation();
-        var $appBtn = $(ev.currentTarget);
-        var appId = $appBtn.data('app_id');
-        var checked = $appBtn.find('input.openerp_enterprise_pricing_app_checkbox').is(":checked");
-        this._toggleApp(appId, !checked);
-        await this._toggleRelatingApps(appId, !checked);
-        this.appsCount = this.appsList.size;
+        
+        const $card = $(ev.currentTarget).closest('.openerp_enterprise_pricing_plan_card');
+        const planId = parseInt($card.data('plan-id'));
+        this.selectedPlanId = planId;
+        
+        // Update selected plan input
+        this.$('#selected_plan_id').val(planId);
+        
+        // Highlight active card
+        this.$('.openerp_enterprise_pricing_plan_card').removeClass('border-primary').addClass('border-200');
+        this.$('.openerp_enterprise_pricing_plan_card').find('.plan-check-icon').addClass('d-none');
+        this.$('.openerp_enterprise_pricing_plan_card').find('.btn-select-plan-action')
+            .removeClass('btn-primary').addClass('btn-outline-primary').text(_t("Select Plan"));
+        
+        $card.addClass('border-primary').removeClass('border-200');
+        $card.find('.plan-check-icon').removeClass('d-none');
+        $card.find('.btn-select-plan-action')
+            .removeClass('btn-outline-primary').addClass('btn-primary').text(_t("Selected"));
+        
+        // Hide error alert on board
+        this.$('.openerp_enterprise_pricing_error_no_apps').addClass('d-none');
+        
         this._recomputePriceBoard();
-    },
-	
-	async _toggleRelatingApps(appId, state) {
-        var self = this;
-        if (state) {
-			var requiredAppIds = await this.rpc('/pricing/get-required-apps', {app_id: appId});
-			$.each(requiredAppIds, function (index, requiredAppId) {
-                self._toggleApp(requiredAppId, true);
-            });
+
+        // Finish subscription automatically when selecting plan (if domain fields are validated or upgrading)
+        const isUpgrade = this.$('input[name="instance_id"]').length > 0;
+        if (isUpgrade) {
+            if (this.session.user_id === false) {
+                this.notification.add(_t('Please login to continue'), { type: 'warning', sticky: true });
+                return;
+            }
+            this.blockUI(_t("Processing your request..."));
+            this.$el.submit();
         } else {
-			var dependAppIds = await this.rpc('/pricing/get-dependent-apps', {app_id: appId});
-			$.each(dependAppIds, function (index, dependAppId) {
-                self._toggleApp(dependAppId, false);
-            });
-        }
-    },
-	
-	_toggleApp(appId, state) {
-        var $appBtn = this.$el.find(".openerp_enterprise_pricing_app[data-app_id='" + appId.toString() + "']");
-        var $input = $appBtn.find('input.openerp_enterprise_pricing_app_checkbox');
-        if (state) {
-            $appBtn.addClass('checked');
-            $appBtn.find('span.fa-check').removeClass('d-none');
-            $input.prop('checked', true);
-            this.appsList.add(appId);
-        } else {
-            $appBtn.removeClass('checked');
-            $appBtn.find('span.fa-check').addClass('d-none');
-            $input.prop('checked', false);
-            this.appsList.delete(appId);
+            const checkResult = await this._checkDomain();
+            if (checkResult) {
+                if (this.session.user_id === false) {
+                    this.notification.add(_t('Please login to subscribe'), { type: 'warning', sticky: true });
+                    return;
+                }
+                this.blockUI(_t("Processing your request..."));
+                this.$el.submit();
+            }
         }
     },
 	
 	_onSwitchMonthly(ev) {
         this.subscriptionType = 'monthly';
         this.$('input[name=price_by]').val("monthly");
-        this.$('.openerp_enterprise_user_pricing_monthly').removeClass('d-none');
-        this.$('.openerp_enterprise_user_pricing_yearly').addClass('d-none');
-        this.$('.openerp_enterprise_pricing_app_price.hide_monthly_apps').removeClass('d-none');
-        this.$('.openerp_enterprise_pricing_app_price.hide_yearly_apps').addClass('d-none');
+        this.$('#monthly_by').prop('checked', true);
+
+        // Update cards price display
+        this.$('.plan-price-monthly').removeClass('d-none');
+        this.$('.plan-price-yearly').addClass('d-none');
+        this.$('.billing-cycle-desc').text(_t("Billed monthly"));
+
         this._recomputePriceBoard();
     },
 	
 	_onSwitchYearly(ev) {
         this.subscriptionType = 'yearly';
         this.$('input[name=price_by]').val("yearly");
-        this.$('.openerp_enterprise_user_pricing_monthly').addClass('d-none');
-        this.$('.openerp_enterprise_user_pricing_yearly').removeClass('d-none');
-        this.$('.openerp_enterprise_pricing_app_price.hide_monthly_apps').addClass('d-none');
-        this.$('.openerp_enterprise_pricing_app_price.hide_yearly_apps').removeClass('d-none');
-        this._recomputePriceBoard();
-    },
-	
-	_onChangeUsers(ev) {
-        var $input = $(ev.currentTarget);
-        this.usersCount = parseInt($input.val());
+        this.$('#yearly_by').prop('checked', true);
+
+        // Update cards price display
+        this.$('.plan-price-monthly').addClass('d-none');
+        this.$('.plan-price-yearly').removeClass('d-none');
+        this.$('.billing-cycle-desc').text(_t("Billed annually"));
+
         this._recomputePriceBoard();
     },
 
@@ -212,6 +180,11 @@ publicWidget.registry.SaasPortalPricing = publicWidget.Widget.extend({
     },
 	
 	async _checkDomain() {
+        // If we are upgrading/downgrading, subdomain input doesn't exist
+        if (this.$('input#sub_domain').length === 0) {
+            return true;
+        }
+
         this.$('.odoo_domain_picking_error').empty();
         this.$('input#sub_domain').removeClass('has-error');
         var subDomain = this.$('input.openerp_enterprise_pricing_sub_domain').val();
@@ -225,7 +198,7 @@ publicWidget.registry.SaasPortalPricing = publicWidget.Widget.extend({
             this.$('input#sub_domain').addClass('has-error');
             return false;
         } else if (!/^[a-z0-9\-]+$/g.test(subDomain)) {
-            this.notification.add(_t("Your domain can only contains characters from 'a' to 'z', '0' to '9' and '-'."), { type: 'warning', sticky: true });
+            this.notification.add(_t("Your domain can only contain characters from 'a' to 'z', '0' to '9' and '-'."), { type: 'warning', sticky: true });
             this.$('input#sub_domain').addClass('has-error');
             return false;
         }
@@ -239,82 +212,37 @@ publicWidget.registry.SaasPortalPricing = publicWidget.Widget.extend({
         }
         return true;
     },
-	
-	async _onClickTrial(ev) {
-        ev.preventDefault();
-        ev.stopPropagation();
-
-        // Check domain first before doing any authentication checks
-        var checkResult = await this._checkDomain();
-        if (!checkResult) {
-            return;
-        }
-        
-        // Try to verify login status by calling check_trial endpoint
-        try {
-            var checkTrial = await this.rpc('/pricing/check-trial', {});
-            if (checkTrial === false) {
-                this.notification.add(_t('You have reached the maximum number of trials. Please use the paid Odoo instance.'), { type: 'warning', sticky: true });
-                return false;
-            }
-        } catch (e) {
-            // If RPC fails with authentication error, user is not logged in
-            this.notification.add(_t('Please login to start your trial'), { type: 'warning', sticky: true });
-            return false;
-        }
-        
-        var $trial = this.$('input.openerp_enterprise_pricing_app_trial');
-        $trial.prop('checked', true);        
-        this.blockUI(_t("Your Odoo instance is being deployed. Please wait a few minutes."));
-        
-        try {
-            const instance_vals = await this._prepare_instance_vals();
-            var instance = await this.rpc('/saas/instance/create-trial', { instance_vals });
-            this.unblockUI();
-            window.location.href = "/my/saas/odoo-instance/" + instance.id;
-        } catch (e) {
-            this.unblockUI();
-            console.error(e.message);
-            // Show generic error message
-            this.notification.add(_t('An error occurred while creating your trial instance. Please try again.'), { type: 'danger', sticky: true });
-        }
-    },
-	
-	async _prepare_instance_vals() {
-		const subDomain = this.$('input.openerp_enterprise_pricing_sub_domain').val();
-		const domainId = parseInt(this.$('select.openerp_enterprise_pricing_domain').val());
-		const subscriptionType = this.$('input#yearly_by').val();
-		const creationMode = this.$('input[name="creation_mode"]:checked').val() || 'scratch';
-		const templateInstanceId = parseInt(this.$('select#template_instance_id').val() || 0);
-		const addIds = [];
-		$("input.openerp_enterprise_pricing_app_checkbox:checkbox:checked").each(function() {
-			 addIds.push($(this).attr("id"))			 
-		});
-		
-		const instance_vals = {
-			sub_domain: subDomain,
-			base_domain_id: domainId,
-			subscription_type: subscriptionType,
-			creation_mode: creationMode,
-			template_instance_id: templateInstanceId,
-			default_app_ids: addIds
-		}
-		
-		return instance_vals
-	},
 
     async _onClickBuy(ev) {
         ev.preventDefault();
         ev.stopPropagation();
-        var checkResult = await this._checkDomain();
-        if (!checkResult) {
+
+        if (!this.selectedPlanId) {
+            this.$('.openerp_enterprise_pricing_error_no_apps').removeClass('d-none');
+            this.notification.add(_t("Please select a plan first."), { type: 'warning', sticky: true });
             return;
         }
-		if (this.session.user_id === false) {
-			this.notification.add('Please login to buy now', { type: 'warning', sticky: true });
-			return false
-		}
-        await this.$el.submit();
+
+        const isUpgrade = this.$('input[name="instance_id"]').length > 0;
+        if (isUpgrade) {
+            if (this.session.user_id === false) {
+                this.notification.add(_t('Please login to continue'), { type: 'warning', sticky: true });
+                return;
+            }
+            this.blockUI(_t("Processing your request..."));
+            this.$el.submit();
+        } else {
+            const checkResult = await this._checkDomain();
+            if (!checkResult) {
+                return;
+            }
+            if (this.session.user_id === false) {
+                this.notification.add(_t('Please login to buy now'), { type: 'warning', sticky: true });
+                return;
+            }
+            this.blockUI(_t("Processing your request..."));
+            this.$el.submit();
+        }
     },
 	
 	blockUI(message) {
