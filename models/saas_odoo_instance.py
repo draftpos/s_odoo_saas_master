@@ -67,6 +67,9 @@ class OdooInstance(models.Model):
     resource_package_id = fields.Many2one('saas.resource.package', string='Resource Package', compute='_compute_resource_package_id', store=True, readonly=False)
     resource_package_line_ids = fields.One2many('saas.odoo.instance.resource.package.line', 'instance_id', string='Resource Package Lines',
         compute='_compute_resource_package_line_ids', store=True, readonly=False)
+    plan_id = fields.Many2one('saas.plan', string='SaaS Plan', ondelete='set null')
+    limit_pos_terminals = fields.Integer(string='POS Terminals Limit', compute='_compute_limits', store=True, readonly=False)
+    limit_users = fields.Integer(string='Users Limit', compute='_compute_limits', store=True, readonly=False)
     state = fields.Selection([
         ('draft', 'Draft'),
         ('deploy', 'Deployed'),
@@ -185,6 +188,17 @@ class OdooInstance(models.Model):
                         'type': line.type
                     }))
                 r.resource_package_line_ids = lines
+
+    @api.depends('plan_id')
+    def _compute_limits(self):
+        for r in self:
+            if r.plan_id:
+                r.limit_pos_terminals = r.plan_id.limit_pos_terminals
+                r.limit_users = r.plan_id.limit_users
+            else:
+                r.limit_pos_terminals = 1
+                r.limit_users = 5
+
 
     @api.depends('name', 'based_domain_id.name')
     def _compute_url(self):
@@ -1088,6 +1102,7 @@ WantedBy=multi-user.target
             'buy_now_from_pricing': buy_now_from_pricing,
             'use_template': use_template,
             'template_instance_id': template_instance_id,
+            'plan_id': data.get('plan_id'),
         }
         return res
 
@@ -1216,3 +1231,38 @@ WantedBy=multi-user.target
             # Fully redeploy/reinitialize the site from template or scratch
             r.action_deploy()
             r.message_post(body=_("User data has been cleared and site has been redeployed."))
+
+    def action_sync_plan_limits(self):
+        for r in self:
+            if r.state == 'deploy' and r.pserver_id:
+                plan_name = r.plan_id.name if r.plan_id else 'None'
+                limit_pos = r.limit_pos_terminals or 1
+                limit_users = r.limit_users or 5
+                
+                sql_cmds = [
+                    f"INSERT INTO ir_config_parameter (key, value) VALUES ('saas.plan_name', '{plan_name}') ON CONFLICT (key) DO UPDATE SET value = '{plan_name}';",
+                    f"INSERT INTO ir_config_parameter (key, value) VALUES ('saas.limit_pos_terminals', '{limit_pos}') ON CONFLICT (key) DO UPDATE SET value = '{limit_pos}';",
+                    f"INSERT INTO ir_config_parameter (key, value) VALUES ('saas.limit_users', '{limit_users}') ON CONFLICT (key) DO UPDATE SET value = '{limit_users}';"
+                ]
+                
+                server = r.odoo_server_id
+                port_arg = f"-p {server.pg_port}" if server.pg_port else ""
+                psql_cmd = f"PGPASSWORD='{server.pg_password}' psql -h {server.pg_host} {port_arg} -U {server.pg_user} -d {r.technical_name}"
+                
+                ssh = r.pserver_id._connect()
+                try:
+                    r.pserver_id._exec_cmd(psql_cmd, ssh, arguments=sql_cmds, raise_on_error=False)
+                    _logger.info("Plan limits synchronized via psql for instance %s", r.name)
+                except Exception as e:
+                    _logger.exception("Failed to sync plan limits via SSH for instance %s: %s", r.name, e)
+                finally:
+                    ssh.close()
+
+    def write(self, vals):
+        res = super(OdooInstance, self).write(vals)
+        if any(f in vals for f in ('plan_id', 'limit_pos_terminals', 'limit_users')):
+            for record in self:
+                if record.state == 'deploy':
+                    record.action_sync_plan_limits()
+        return res
+

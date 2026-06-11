@@ -42,3 +42,6 @@ access_saas_odoo_instance_resource_package_line_user,saas.odoo.instance.resource
 access_saas_api_token_user,saas.api.token.user,model_saas_api_token,group_odoo_saas_user,1,0,0,0
 access_saas_api_token_manager,saas.api.token.manager,model_saas_api_token,group_odoo_saas_manager,1,1,1,1
 access_saas_sso_token,access.saas.sso.token,model_saas_sso_token,base.group_user,1,1,1,1
+access_saas_plan_user,saas.plan.user,model_saas_plan,group_odoo_saas_user,1,0,0,0
+access_saas_plan_manager,saas.plan.manager,model_saas_plan,group_odoo_saas_manager,1,1,1,1
+

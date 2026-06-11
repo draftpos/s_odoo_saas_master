@@ -36,3 +36,5 @@ from . import saas_resource_package_line
 from . import saas_odoo_instance_resource_package_line
 from . import saas_api_token
 from . import saas_sso_token
+from . import saas_plan
+

@@ -126,6 +126,7 @@ class PServer(models.Model):
                 tenant_addons_src = f"{odoo_base}/custom-addons/s_odoo_saas_master/tenant_addons"
                 self._exec_cmd(f"cp -r {tenant_addons_src}/s_odoo_saas_tenant /home/{instance.technical_name}/custom-addons/", ssh, raise_on_error=False)
                 self._exec_cmd(f"cp -r {odoo_base}/custom-addons/saas_api /home/{instance.technical_name}/custom-addons/", ssh, raise_on_error=False)
+                self._exec_cmd(f"cp -r {tenant_addons_src}/s_odoo_saas_tenant_pos /home/{instance.technical_name}/custom-addons/", ssh, raise_on_error=False)
                 
                 step = 'config_generated'
                 self._update_deploy_step(instance, step, "Odoo configuration generated.")
@@ -156,6 +157,7 @@ class PServer(models.Model):
                         raise e
                 
                 self._sync_tenant_credentials(instance, ssh)
+                self._sync_tenant_limits(instance, ssh)
                 step = 'modules_installed'
                 self._update_deploy_step(instance, step, "Odoo modules initialized successfully.")
 
@@ -206,6 +208,7 @@ class PServer(models.Model):
                 tenant_addons_src = f"{odoo_base}/custom-addons/s_odoo_saas_master/tenant_addons"
                 self._exec_cmd(f"cp -r {tenant_addons_src}/s_odoo_saas_tenant /home/{instance.technical_name}/custom-addons/", ssh, raise_on_error=False)
                 self._exec_cmd(f"cp -r {odoo_base}/custom-addons/saas_api /home/{instance.technical_name}/custom-addons/", ssh, raise_on_error=False)
+                self._exec_cmd(f"cp -r {tenant_addons_src}/s_odoo_saas_tenant_pos /home/{instance.technical_name}/custom-addons/", ssh, raise_on_error=False)
                 
                 step = 'folders_created'
                 self._update_deploy_step(instance, step, "Instance folders prepared from template.")
@@ -264,6 +267,7 @@ class PServer(models.Model):
                 self._exec_cmd(install_cmd, ssh, raise_on_error=True)
                 
                 self._sync_tenant_credentials(instance, ssh)
+                self._sync_tenant_limits(instance, ssh)
                 step = 'modules_installed'
                 self._update_deploy_step(instance, step, "Odoo database ready.")
 
@@ -349,6 +353,32 @@ class PServer(models.Model):
             _logger.info("Successfully synchronized tenant credentials for instance %s", instance.name)
         except Exception as e:
             _logger.warning("Failed to synchronize tenant credentials for instance %s: %s", instance.name, e)
+
+    def _sync_tenant_limits(self, instance, ssh):
+        """
+        Synchronize the SaaS plan limits (POS terminals, users) to the tenant database
+        as ir.config_parameter records.
+        """
+        _logger.info("Synchronizing tenant limits for instance %s", instance.name)
+        plan_name = instance.plan_id.name if instance.plan_id else 'None'
+        limit_pos = instance.limit_pos_terminals or 1
+        limit_users = instance.limit_users or 5
+        
+        sql_cmds = [
+            f"INSERT INTO ir_config_parameter (key, value) VALUES ('saas.plan_name', '{plan_name}') ON CONFLICT (key) DO UPDATE SET value = '{plan_name}';",
+            f"INSERT INTO ir_config_parameter (key, value) VALUES ('saas.limit_pos_terminals', '{limit_pos}') ON CONFLICT (key) DO UPDATE SET value = '{limit_pos}';",
+            f"INSERT INTO ir_config_parameter (key, value) VALUES ('saas.limit_users', '{limit_users}') ON CONFLICT (key) DO UPDATE SET value = '{limit_users}';"
+        ]
+        
+        server = instance.odoo_server_id
+        port_arg = f"-p {server.pg_port}" if server.pg_port else ""
+        psql_cmd = f"PGPASSWORD='{server.pg_password}' psql -h {server.pg_host} {port_arg} -U {server.pg_user} -d {instance.technical_name}"
+        
+        try:
+            self._exec_cmd(psql_cmd, ssh, arguments=sql_cmds, raise_on_error=True)
+            _logger.info("Successfully synchronized tenant limits for instance %s", instance.name)
+        except Exception as e:
+            _logger.warning("Failed to synchronize tenant limits for instance %s: %s", instance.name, e)
 
     def _sync_tenant_credentials_with_password(self, instance, name, email, password_hash, login=None):
         """

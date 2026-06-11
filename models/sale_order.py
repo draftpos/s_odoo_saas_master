@@ -28,15 +28,17 @@ class SaleOrder(models.Model):
     saas_order_type = fields.Selection([
         ('buy_new', 'Buy New'),
         ('renew', 'Renew'),
-        ('buy_extra', 'Buy Extra')
+        ('buy_extra', 'Buy Extra'),
+        ('change_plan', 'Change Plan'),
     ], default='buy_new', readonly=True, copy=False)
+    plan_id = fields.Many2one('saas.plan', string='SaaS Plan')
     buy_now_from_pricing = fields.Boolean(help="Technical field")
 
     @api.constrains('is_saas_order', 'order_line')
     def _check_saas_order_line(self):
         for r in self:
             if r.is_saas_order and r.order_line:
-                if r.saas_order_type not in ('buy_extra', 'buy_plan_extra') and not any(line.product_id.is_saas_user for line in r.order_line):
+                if r.saas_order_type not in ('buy_extra', 'buy_plan_extra') and not r.plan_id and not any(line.product_id.is_saas_user for line in r.order_line):
                     raise ValidationError(_("Order lines must include SaaS User product"))
 
     def _action_confirm(self):
@@ -52,9 +54,20 @@ class SaleOrder(models.Model):
                         if not instance.buy_now_from_pricing:
                             instance.action_deploy()
                         r.instance_id = instance.id
-                elif r.instance_id and r.saas_order_type == 'renew':
-                    expiration_date = InstanceObj._get_expiration_date(r.subscription_type, expiration_date=r.instance_id.expiration_date)
-                    r.instance_id.write({'expiration_date': expiration_date, 'trial': False, 'subscription_type': r.subscription_type})
+                elif r.instance_id and (r.saas_order_type in ('renew', 'change_plan') or r.plan_id):
+                    expiration_date = r.instance_id.expiration_date
+                    if r.saas_order_type in ('renew', 'change_plan'):
+                        expiration_date = InstanceObj._get_expiration_date(r.subscription_type, expiration_date=r.instance_id.expiration_date)
+                    write_vals = {
+                        'expiration_date': expiration_date,
+                        'trial': False,
+                        'subscription_type': r.subscription_type,
+                    }
+                    if r.plan_id:
+                        write_vals['plan_id'] = r.plan_id.id
+                    r.instance_id.write(write_vals)
+                    r.instance_id._compute_limits()
+                    r.instance_id.action_sync_plan_limits()
         return res
 
     def _create_odoo_instance(self):
@@ -103,6 +116,7 @@ class SaleOrder(models.Model):
                 'default_module': default_module,
                 'buy_now_from_pricing': self.buy_now_from_pricing,
                 'state': 'draft',
+                'plan_id': self.plan_id.id if self.plan_id else False,
             })
             
             # Clear user data on physical server
@@ -118,6 +132,7 @@ class SaleOrder(models.Model):
             'buy_now_from_pricing': self.buy_now_from_pricing,
             'creation_mode': self.creation_mode,
             'template_instance_id': self.template_instance_id.id if self.template_instance_id else False,
+            'plan_id': self.plan_id.id if self.plan_id else False,
         }
         instance_vals = self.env['saas.odoo.instance']._prepare_instance_val_to_create(data)
         instance = self.env['saas.odoo.instance'].sudo().create(instance_vals)        

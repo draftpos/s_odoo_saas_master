@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+
+    <record id="saas_plan_view_tree" model="ir.ui.view">
+        <field name="name">saas.plan.view.tree</field>
+        <field name="model">saas.plan</field>
+        <field name="arch" type="xml">
+            <list string="SaaS Plans">
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="code"/>
+                <field name="monthly_product_id"/>
+                <field name="yearly_product_id"/>
+                <field name="limit_pos_terminals"/>
+                <field name="limit_users"/>
+                <field name="active" widget="boolean_toggle"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="saas_plan_view_form" model="ir.ui.view">
+        <field name="name">saas.plan.view.form</field>
+        <field name="model">saas.plan</field>
+        <field name="arch" type="xml">
+            <form string="SaaS Plan">
+                <sheet>
+                    <field name="active" invisible="1"/>
+                    <widget name="web_ribbon" title="Archived" bg_color="text-bg-danger" invisible="active"/>
+                    <div class="oe_title">
+                        <label for="name" string="Plan Name"/>
+                        <h1>
+                            <field class="text-break" name="name" placeholder="e.g. Lite, Growth, Enterprise"/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group string="Configuration">
+                            <field name="code" placeholder="e.g. lite"/>
+                            <field name="sequence"/>
+                        </group>
+                        <group string="Resource Limitations">
+                            <field name="limit_pos_terminals"/>
+                            <field name="limit_users"/>
+                        </group>
+                    </group>
+                    <group string="Subscription Products">
+                        <group>
+                            <field name="monthly_product_id" options="{'no_create': True}"/>
+                        </group>
+                        <group>
+                            <field name="yearly_product_id" options="{'no_create': True}"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page name="description" string="Website Description">
+                            <field name="description" placeholder="Describe the plan features and details for the pricing screen..."/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="saas_plan_view_search" model="ir.ui.view">
+        <field name="name">saas.plan.view.search</field>
+        <field name="model">saas.plan</field>
+        <field name="arch" type="xml">
+            <search string="Search SaaS Plans">
+                <field name="name"/>
+                <field name="code"/>
+                <separator/>
+                <filter name="archived" string="Archived" domain="[('active', '=', False)]"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="saas_plan_action" model="ir.actions.act_window">
+        <field name="name">SaaS Plans</field>
+        <field name="res_model">saas.plan</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="saas_plan_view_search"/>
+    </record>
+
+    <menuitem id="saas_plan_menu" action="saas_plan_action" parent="saas_menu_config" sequence="90"/>
+
+</odoo>

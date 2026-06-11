@@ -265,6 +265,107 @@ class Pricing(http.Controller):
         instance.action_deploy()
         return {'id': instance.id}
 
+    @http.route([
+        '/pricing-plans'
+    ], type='http', auth="public", website=True)
+    def pricing_plans(self, **post):
+        plans = request.env['saas.plan'].sudo().search([('active', '=', True)], order='sequence, id')
+        pricelist = request.website._get_and_cache_current_pricelist()
+        
+        plan_data = []
+        for plan in plans:
+            monthly_price = 0.0
+            yearly_price = 0.0
+            
+            if plan.monthly_product_id:
+                monthly_price = pricelist._get_product_price(plan.monthly_product_id, 1)
+            if plan.yearly_product_id:
+                yearly_price = pricelist._get_product_price(plan.yearly_product_id, 1)
+                
+            plan_data.append({
+                'id': plan.id,
+                'name': plan.name,
+                'description': plan.description,
+                'limit_pos_terminals': plan.limit_pos_terminals,
+                'limit_users': plan.limit_users,
+                'monthly_product_id': plan.monthly_product_id.id if plan.monthly_product_id else False,
+                'yearly_product_id': plan.yearly_product_id.id if plan.yearly_product_id else False,
+                'monthly_price': monthly_price,
+                'yearly_price': yearly_price,
+            })
+            
+        templates = request.env['saas.odoo.instance'].sudo().search([
+            ('is_template', '=', True),
+            ('state', '=', 'deploy'),
+        ])
+        default_template_id = request.website.company_id.backup_restore_instance_id.id
+        domains = request.env['saas.based.domain'].sudo().search([])
+        
+        # Check if we are upgrading/downgrading an existing instance
+        instance_id = post.get('instance_id')
+        instance = False
+        if instance_id:
+            instance = request.env['saas.odoo.instance'].sudo().browse(int(instance_id))
+            if not instance.exists() or instance.partner_id.id != request.env.user.partner_id.id:
+                instance = False
+        
+        values = {
+            'plans': plan_data,
+            'templates': templates,
+            'default_template_id': default_template_id,
+            'domains': domains,
+            'pricelist': pricelist,
+            'instance': instance,
+        }
+        return request.render("s_odoo_saas_master.pricing_plans", values)
+
+    @http.route(['/pricing-plans/checkout'], type='http', methods=['POST'], auth="public", website=True)
+    def plans_checkout(self, **post):
+        plan_id = post.get('plan_id')
+        subscription_type = post.get('price_by', 'yearly')
+        instance_id = post.get('instance_id')
+        
+        if not plan_id:
+            return request.redirect('/pricing-plans')
+            
+        pricelist = request.website._get_and_cache_current_pricelist()
+        
+        checkout_vals = {
+            'plan_id': int(plan_id),
+            'subscription_type': subscription_type,
+            'pricelist': pricelist,
+            'partner': request.env.user.partner_id,
+        }
+        
+        if instance_id:
+            # Plan Upgrade/Downgrade Flow for existing instance
+            instance = request.env['saas.odoo.instance'].sudo().browse(int(instance_id))
+            if not instance.exists() or instance.partner_id.id != request.env.user.partner_id.id:
+                return request.redirect('/my/saas/odoo-instances')
+            
+            checkout_vals.update({
+                'instance_id': instance.id,
+                'sub_domain': instance.name,
+                'domain_id': instance.based_domain_id.id,
+            })
+        else:
+            # New Plan Subscription Flow
+            sub_domain = post.get('sub_domain')
+            domain_id = post.get('domain')
+            creation_mode = post.get('creation_mode', 'scratch')
+            template_instance_id = post.get('template_instance_id')
+            
+            checkout_vals.update({
+                'sub_domain': sub_domain,
+                'domain_id': int(domain_id) if domain_id else False,
+                'creation_mode': creation_mode,
+                'template_instance_id': int(template_instance_id) if template_instance_id else False,
+            })
+            
+        order = request.website.create_saas_order(checkout_vals)
+        request.session['sale_order_id'] = order.id
+        return request.redirect('/shop/checkout?express=1')
+
 
 NON_REQUIRED_FIELDS = ['street', 'city']
 

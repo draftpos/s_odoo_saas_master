@@ -138,6 +138,10 @@
                                   <td>Active Users</td>
                                   <td><span t-field="instance.active_user"/> / <span t-field="instance.paid_user"/></td>
                                 </tr>
+                                <tr t-if="instance.plan_id">
+                                  <td>SaaS Plan</td>
+                                  <td><b t-field="instance.plan_id.name"/></td>
+                                </tr>
                                 <tr>
                                   <td>Status</td>
                                   <td>
@@ -172,11 +176,16 @@
 
                         <ul class="list-group list-group-flush flex-wrap flex-row flex-lg-column">
                             <li class="list-group-item flex-grow-1">
-                                <div class="mx-1 mb8">
-                                    <a t-if="instance.state == 'deploy'" class="btn btn-primary btn-block" t-attf-href="{{ instance.url }}" target="_blank">
-                                        <i class="fa fa-fw fa-plug"/> Connect
-                                    </a>
-                                </div>
+                                 <div class="mx-1 mb8">
+                                     <a t-if="instance.state == 'deploy'" class="btn btn-primary btn-block" t-attf-href="{{ instance.url }}" target="_blank">
+                                         <i class="fa fa-fw fa-plug"/> Connect
+                                     </a>
+                                 </div>
+                                 <div class="mx-1 mb8" t-if="instance.state == 'deploy'">
+                                     <a class="btn btn-warning btn-block text-white" t-attf-href="/pricing-plans?instance_id={{instance.id}}">
+                                         <i class="fa fa-fw fa-exchange"/> Change Plan / Upgrade
+                                     </a>
+                                 </div>
                                 <div class="btn-toolbar flex-sm-nowrap">
                                     <div class="btn-group flex-grow-1 mx-1">
                                         <a class="btn btn-block btn-success o_instance_start" t-att-data-instance_id="instance.id" href="#" title="Start"><i class="fa fa-fw fa-play"/> Start</a>

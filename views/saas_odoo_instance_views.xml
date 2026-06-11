@@ -9,6 +9,7 @@
                 <field name="name"/>
                 <field name="based_domain_id"/>
                 <field name="partner_id"/>
+                <field name="plan_id"/>
                 <field name="is_assigned" widget="boolean_toggle"/>
                 <field name="odoo_version_id"/>
                 <field name="trial"/>
@@ -197,7 +198,11 @@
                     				<field name="trial" readonly="state != 'draft'"/>
                  					<field name="default_module" readonly="state != 'draft'" invisible="use_template"/>                    				
                     				<field name="subscription_type" invisible="not subscription_type"/>
-                    				<field name="expiration_date" readonly="state == 'suspend'"/>                    				
+                    				<field name="expiration_date" readonly="state == 'suspend'"/>
+                                    <field name="plan_id"/>
+                                    <field name="limit_pos_terminals"/>
+                                    <field name="limit_users"/>
+                                    <button name="action_sync_plan_limits" string="Sync Limits to Tenant" type="object" class="btn-secondary" invisible="state != 'deploy'"/>
                     			</group>
                    				<group>
                    					<field name="noindex" readonly="state != 'draft'"/>
