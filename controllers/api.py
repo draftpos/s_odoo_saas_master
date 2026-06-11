@@ -171,106 +171,54 @@ class SaaSAPI(http.Controller):
             # Check for pool assignment or fallback creation if subdomain is provided
             subdomain = kwargs.get('subdomain') or kwargs.get('sub_domain')
             base_domain_id = kwargs.get('base_domain_id')
-            restore = kwargs.get('restore', True)
-            restore_source_site_id = kwargs.get('restore_source_site_id')
 
-            instance_data = {}
-            password_hash = user.password
+            import secrets
+            verification_token = secrets.token_urlsafe(32)
 
-            claimed_instance = request.env['saas.odoo.instance'].sudo()._try_claim_pool_instance(
-                partner=user.partner_id,
-                password_hash=password_hash
-            )
+            partner = user.partner_id
+            partner.write({
+                'is_email_verified': False,
+                'email_verification_token': verification_token,
+                'pending_subdomain': subdomain or False,
+                'pending_base_domain_id': base_domain_id or False,
+            })
 
-            if claimed_instance:
-                instance_data = self._get_instance_data(claimed_instance)
-            elif subdomain and base_domain_id:
-                subdomain = subdomain.strip()
-                if len(subdomain) > 100:
-                    raise ValidationError("Subdomain name is too long.")
-                if re.search(r'[\x00-\x1f\x7f-\x9f<>]', subdomain):
-                    raise ValidationError("Subdomain contains invalid characters.")
-                if not subdomain.replace('-', '').isalnum():
-                    raise ValidationError("Subdomain can only contain letters, numbers, and hyphens.")
-                if subdomain[0].isdigit() or subdomain[0] == '-':
-                    raise ValidationError("Subdomain must start with a letter.")
-
-                base_domain = request.env['saas.based.domain'].sudo().browse(base_domain_id)
-                if not base_domain.exists():
-                    raise ValidationError("Invalid base domain ID.")
-
-                full_domain = f"{subdomain}.{base_domain.name}"
-                existing = request.env['saas.odoo.instance'].sudo().search([
-                    ('domain_name', '=', full_domain)
-                ], limit=1)
-                if existing:
-                    raise ValidationError(f"Domain {full_domain} is already taken.")
-
-                odoo_server = request.env['saas.odoo.server'].sudo().search([
-                    ('active', '=', True),
-                ], order='sequence')
-                odoo_server = odoo_server.filtered(lambda s: s.has_available_capacity())[:1]
-                if not odoo_server:
-                    raise ValidationError("No servers available with capacity.")
-
-                creation_mode = 'scratch'
-                use_template = False
-                template_instance_id = False
-                if restore:
-                    creation_mode = 'backup_restore'
-                    if restore_source_site_id:
-                        template_record = request.env['saas.odoo.instance'].sudo().browse(int(restore_source_site_id))
-                        if template_record.exists() and template_record.is_template and template_record.state == 'deploy':
-                            use_template = True
-                            template_instance_id = template_record.id
-                    
-                    if not use_template:
-                        company = user.company_id or request.env.company
-                        if company.backup_restore_instance_id:
-                            use_template = True
-                            template_instance_id = company.backup_restore_instance_id.id
-                        else:
-                            creation_mode = 'scratch'
-
-                instance_vals = {
-                    'name': subdomain,
-                    'based_domain_id': base_domain_id,
-                    'odoo_version_id': odoo_server.odoo_version_id.id if odoo_server.odoo_version_id else request.env['saas.odoo.version'].sudo().search([], limit=1).id,
-                    'odoo_server_id': odoo_server.id,
-                    'partner_id': user.partner_id.id,
-                    'trial': True,
-                    'creation_mode': creation_mode,
-                    'use_template': use_template,
-                    'template_instance_id': template_instance_id,
+            # Send verification email
+            try:
+                verify_url = f"{request.httprequest.url_root.rstrip('/')}/saas/verify_email?token={verification_token}"
+                subject = "Verify your email for Havano SaaS"
+                body = f"""
+                <div style="margin:0px;padding:24px;font-family:'Inter',sans-serif;background-color:#F8F9FA;color:#333;line-height:1.6;">
+                    <div style="max-width:600px;margin:0 auto;background:#FFF;padding:32px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.05);">
+                        <h2 style="color:#2C3E50;margin-top:0;">Verify Your Email Address</h2>
+                        <p>Hello {name},</p>
+                        <p>Thank you for registering! Please click the button below to verify your email address. Once verified, your Odoo instance will be automatically provisioned and deployed for you.</p>
+                        <p style="text-align:center;margin:32px 0;">
+                            <a href="{verify_url}" style="background-color:#875A7B;padding:12px 28px;text-decoration:none;color:#FFF;border-radius:6px;font-weight:600;display:inline-block;">Verify Email Address</a>
+                        </p>
+                        <p style="font-size:12px;color:#7F8C8D;">Or copy and paste this link in your browser:</p>
+                        <p style="font-size:12px;color:#3498DB;word-break:break-all;"><a href="{verify_url}">{verify_url}</a></p>
+                        <hr style="border:none;border-top:1px solid #ECF0F1;margin:24px 0;"/>
+                        <p style="font-size:12px;color:#95A5A6;margin-bottom:0;">Best regards,<br/>Havano POS Team</p>
+                    </div>
+                </div>
+                """
+                mail_values = {
+                    'subject': subject,
+                    'body_html': body,
+                    'email_to': email,
+                    'email_from': request.env.company.email or "noreply@havano.pro",
                 }
-                new_instance = request.env['saas.odoo.instance'].sudo().create(instance_vals)
-
-                import threading
-                import odoo as _odoo
-                
-                def _deploy_instance_async(db_name, instance_id):
-                    registry = _odoo.registry(db_name)
-                    with registry.cursor() as cr:
-                        env = _odoo.api.Environment(cr, _odoo.SUPERUSER_ID, {})
-                        try:
-                            instance = env['saas.odoo.instance'].browse(instance_id)
-                            instance.action_deploy()
-                            env.cr.commit()
-                        except Exception:
-                            env.cr.rollback()
-
-                threading.Thread(target=_deploy_instance_async, args=(request.db, new_instance.id)).start()
-                instance_data = self._get_instance_data(new_instance)
+                request.env['mail.mail'].sudo().create(mail_values).send()
+            except Exception as mail_err:
+                _logger.warning("Failed to send verification email to %s: %s", email, mail_err)
 
             res_data = {
                 'user_id': user.id,
                 'partner_id': user.partner_id.id,
                 'api_key': token.token,
-                'message': 'Registration successful',
+                'message': 'Registration successful. Please check your email to verify your account and activate your site.',
             }
-            if instance_data:
-                res_data['instance'] = instance_data
-                res_data['website'] = instance_data.get('url')
 
             return self._json_response(data=res_data)
 
@@ -287,6 +235,169 @@ class SaaSAPI(http.Controller):
             _logger.warning("Failed registration system error from IP %s for email %s. Error: %s", ip, email, e)
             _logger.exception("Registration error")
             return self._json_response(error=str(e))
+
+    @http.route('/saas/verify_email', type='http', auth='public', website=True)
+    def verify_email(self, token, **kwargs):
+        if not token:
+            return request.make_response("Missing verification token.", headers=[('Content-Type', 'text/html')])
+
+        partner = request.env['res.partner'].sudo().search([
+            ('email_verification_token', '=', token)
+        ], limit=1)
+
+        if not partner:
+            return request.make_response("Invalid or expired verification token.", headers=[('Content-Type', 'text/html')])
+
+        subdomain = partner.pending_subdomain
+        base_domain_id = partner.pending_base_domain_id.id if partner.pending_base_domain_id else False
+
+        # Mark email as verified and clear token/pending fields
+        partner.write({
+            'is_email_verified': True,
+            'email_verification_token': False,
+            'pending_subdomain': False,
+            'pending_base_domain_id': False,
+        })
+
+        # Claim or create instance
+        user = request.env['res.users'].sudo().search([('partner_id', '=', partner.id)], limit=1)
+        password_hash = user.password if user else False
+
+        claimed_instance = request.env['saas.odoo.instance'].sudo()._try_claim_pool_instance(
+            partner=partner,
+            password_hash=password_hash
+        )
+
+        if not claimed_instance and subdomain and base_domain_id:
+            try:
+                base_domain = request.env['saas.based.domain'].sudo().browse(base_domain_id)
+                odoo_server = request.env['saas.odoo.server'].sudo().search([
+                    ('active', '=', True),
+                ], order='sequence')
+                odoo_server = odoo_server.filtered(lambda s: s.has_available_capacity())[:1]
+
+                if odoo_server and base_domain.exists():
+                    # Check trial limit
+                    trial_limit = partner.company_id.limit_trial or 1
+                    trial_count = request.env['saas.odoo.instance'].sudo().search_count([
+                        ('partner_id', '=', partner.id),
+                        ('trial', '=', True),
+                        ('state', '!=', 'cancel'),
+                    ])
+                    if trial_count < trial_limit:
+                        company = partner.company_id or request.env.company
+                        creation_mode = 'scratch'
+                        use_template = False
+                        template_instance_id = False
+                        if company.backup_restore_instance_id:
+                            creation_mode = 'backup_restore'
+                            use_template = True
+                            template_instance_id = company.backup_restore_instance_id.id
+
+                        instance_vals = {
+                            'name': subdomain,
+                            'based_domain_id': base_domain_id,
+                            'odoo_version_id': odoo_server.odoo_version_id.id if odoo_server.odoo_version_id else request.env['saas.odoo.version'].sudo().search([], limit=1).id,
+                            'odoo_server_id': odoo_server.id,
+                            'partner_id': partner.id,
+                            'trial': True,
+                            'creation_mode': creation_mode,
+                            'use_template': use_template,
+                            'template_instance_id': template_instance_id,
+                        }
+
+                        # Create trial days
+                        trial_days = partner.company_id.instance_trial_day or 15
+                        instance_vals['expiration_date'] = fields.Date.today() + timedelta(days=trial_days)
+
+                        instance = request.env['saas.odoo.instance'].sudo().create(instance_vals)
+
+                        # Auto-deploy in background
+                        import threading
+                        import odoo as _odoo
+                        
+                        def _deploy_instance_async(db_name, instance_id):
+                            registry = _odoo.registry(db_name)
+                            with registry.cursor() as cr:
+                                env = _odoo.api.Environment(cr, _odoo.SUPERUSER_ID, {})
+                                try:
+                                    inst = env['saas.odoo.instance'].browse(instance_id)
+                                    inst.action_deploy()
+                                    env.cr.commit()
+                                except Exception as deploy_err:
+                                    _logger.exception("Async deploy failed for instance %s: %s", instance_id, deploy_err)
+                                    env.cr.rollback()
+
+                        threading.Thread(target=_deploy_instance_async, args=(request.db, instance.id)).start()
+            except Exception as creation_err:
+                _logger.warning("Could not auto-create Odoo instance after verification: %s", creation_err)
+
+        # Render a beautiful success screen
+        html_content = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Account Verified - Havano SaaS</title>
+            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+            <style>
+                body {
+                    font-family: 'Inter', sans-serif;
+                    background-color: #f4f6f9;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    height: 100vh;
+                    margin: 0;
+                }
+                .container {
+                    background: white;
+                    padding: 40px;
+                    border-radius: 12px;
+                    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+                    text-align: center;
+                    max-width: 450px;
+                    width: 100%;
+                }
+                h1 {
+                    color: #2c3e50;
+                    font-size: 24px;
+                    margin-bottom: 16px;
+                }
+                p {
+                    color: #7f8c8d;
+                    font-size: 16px;
+                    line-height: 1.5;
+                    margin-bottom: 24px;
+                }
+                .btn {
+                    background-color: #875A7B;
+                    color: white;
+                    padding: 12px 24px;
+                    text-decoration: none;
+                    border-radius: 6px;
+                    font-weight: 600;
+                    display: inline-block;
+                    transition: background-color 0.2s;
+                }
+                .btn:hover {
+                    background-color: #6a4661;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="margin-bottom: 20px;">
+                    <circle cx="12" cy="12" r="11" fill="#2ECC71" stroke="#27AE60" stroke-width="2"/>
+                    <path d="M7 12L10.5 15.5L17 9" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <h1>Email Verified Successfully!</h1>
+                <p>Thank you for verifying your email address. Your Odoo instance is being assigned and deployed now. You can check the status and log in from your portal.</p>
+                <a href="/my/saas/odoo-instances" class="btn">Go to Dashboard Portal</a>
+            </div>
+        </body>
+        </html>
+        """
+        return request.make_response(html_content, headers=[('Content-Type', 'text/html')])
 
     @http.route('/api/v1/auth/login', type='json', auth='public', methods=['POST'], csrf=False)
     def api_login(self, **kwargs):

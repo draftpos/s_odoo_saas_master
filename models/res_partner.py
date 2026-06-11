@@ -8,6 +8,11 @@ class Partner(models.Model):
     instance_count = fields.Integer(string='Instance Count', compute='_compute_instance_count', compute_sudo=True)
     trial_instance_count = fields.Integer(string='Trial Instance Count', compute='_compute_trial_instance_count', compute_sudo=True)
 
+    is_email_verified = fields.Boolean(string='Email Verified', default=False)
+    email_verification_token = fields.Char(string='Email Verification Token', copy=False)
+    pending_subdomain = fields.Char(string='Pending Subdomain')
+    pending_base_domain_id = fields.Many2one('saas.based.domain', string='Pending Base Domain')
+
     @api.depends('instance_ids')
     def _compute_instance_count(self):
         instance_data = self.env['saas.odoo.instance']._read_group([('partner_id', 'in', self.ids)], ['partner_id'], ['__count'])

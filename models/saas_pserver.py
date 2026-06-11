@@ -125,7 +125,7 @@ class PServer(models.Model):
                 odoo_base = os.path.dirname(server.odoo_bin_path) or '/opt/odoo19'
                 tenant_addons_src = f"{odoo_base}/custom-addons/s_odoo_saas_master/tenant_addons"
                 self._exec_cmd(f"cp -r {tenant_addons_src}/s_odoo_saas_tenant /home/{instance.technical_name}/custom-addons/", ssh, raise_on_error=False)
-                self._exec_cmd(f"cp -r {tenant_addons_src}/saas_api /home/{instance.technical_name}/custom-addons/", ssh, raise_on_error=False)
+                self._exec_cmd(f"cp -r {odoo_base}/custom-addons/saas_api /home/{instance.technical_name}/custom-addons/", ssh, raise_on_error=False)
                 
                 step = 'config_generated'
                 self._update_deploy_step(instance, step, "Odoo configuration generated.")
@@ -205,7 +205,7 @@ class PServer(models.Model):
                 odoo_base = os.path.dirname(server.odoo_bin_path) or '/opt/odoo19'
                 tenant_addons_src = f"{odoo_base}/custom-addons/s_odoo_saas_master/tenant_addons"
                 self._exec_cmd(f"cp -r {tenant_addons_src}/s_odoo_saas_tenant /home/{instance.technical_name}/custom-addons/", ssh, raise_on_error=False)
-                self._exec_cmd(f"cp -r {tenant_addons_src}/saas_api /home/{instance.technical_name}/custom-addons/", ssh, raise_on_error=False)
+                self._exec_cmd(f"cp -r {odoo_base}/custom-addons/saas_api /home/{instance.technical_name}/custom-addons/", ssh, raise_on_error=False)
                 
                 step = 'folders_created'
                 self._update_deploy_step(instance, step, "Instance folders prepared from template.")

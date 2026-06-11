@@ -53,11 +53,12 @@ class SaaS_SSO_Controller(http.Controller):
         # Find or create user locally
         user = request.env['res.users'].sudo().search([('login', '=', email)], limit=1)
         if not user:
+            groups_field = 'group_ids' if 'group_ids' in request.env['res.users']._fields else 'groups_id'
             user = request.env['res.users'].sudo().with_context(no_reset_password=True).create({
                 'name': name,
                 'login': email,
                 'email': email,
-                'groups_id': [(6, 0, [request.env.ref('base.group_user').id, request.env.ref('base.group_erp_manager').id])]
+                groups_field: [(6, 0, [request.env.ref('base.group_user').id, request.env.ref('base.group_erp_manager').id])]
             })
             # Force random password to secure the account locally
             import uuid
