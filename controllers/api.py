@@ -1216,3 +1216,157 @@ class SaaSAPI(http.Controller):
         except Exception as e:
             _logger.exception("Profile API error")
             return self._json_response(error=str(e))
+
+    @http.route('/api/v1/saas/plans', type='json', auth='public', methods=['GET'], csrf=False)
+    def api_saas_plans(self, **kwargs):
+        """
+        List all active SaaS plans with their details and calculated prices.
+        
+        GET /api/v1/saas/plans
+        Header: Authorization: Bearer <api_key>
+        """
+        try:
+            partner = self._authenticate()
+            plans = request.env['saas.plan'].sudo().search([('active', '=', True)], order='sequence, id')
+            
+            pricelist = request.env['product.pricelist'].sudo().search([('company_id', '=', partner.company_id.id)], limit=1)
+            if not pricelist:
+                pricelist = request.env['product.pricelist'].sudo().search([], limit=1)
+
+            plan_data = []
+            for plan in plans:
+                monthly_price = 0.0
+                yearly_price = 0.0
+                if plan.monthly_product_id:
+                    monthly_price = pricelist.with_context(subscription_type='monthly')._get_product_price(plan.monthly_product_id, 1, partner=partner)
+                if plan.yearly_product_id:
+                    yearly_price = pricelist.with_context(subscription_type='yearly')._get_product_price(plan.yearly_product_id, 1, partner=partner)
+
+                plan_data.append({
+                    'id': plan.id,
+                    'name': plan.name,
+                    'code': plan.code,
+                    'description': plan.description,
+                    'limit_pos_terminals': plan.limit_pos_terminals,
+                    'limit_users': plan.limit_users,
+                    'monthly_product_id': plan.monthly_product_id.id if plan.monthly_product_id else False,
+                    'yearly_product_id': plan.yearly_product_id.id if plan.yearly_product_id else False,
+                    'monthly_price': monthly_price,
+                    'yearly_price': yearly_price,
+                })
+
+            return self._json_response(data={
+                'plans': plan_data,
+                'currency': pricelist.currency_id.name,
+                'currency_symbol': pricelist.currency_id.symbol,
+            })
+
+        except AccessDenied as e:
+            return self._json_response(error=str(e))
+        except Exception as e:
+            _logger.exception("SaaS plans API error")
+            return self._json_response(error=str(e))
+
+    @http.route('/api/v1/saas/subscribe', type='json', auth='public', methods=['POST'], csrf=False)
+    def api_saas_subscribe(self, **kwargs):
+        """
+        Create/finish subscription for a plan (for new or existing instance).
+        
+        POST /api/v1/saas/subscribe
+        Header: Authorization: Bearer <api_key>
+        Body: {
+            "plan_id": 1,
+            "price_by": "yearly" or "monthly",
+            "sub_domain": "mycompany" (required if new),
+            "base_domain_id": 1 (required if new),
+            "creation_mode": "scratch" or "backup_restore" (optional),
+            "template_instance_id": 1 (optional),
+            "instance_id": 1 (optional, for upgrade/downgrade)
+        }
+        """
+        try:
+            partner = self._authenticate()
+            plan_id = kwargs.get('plan_id')
+            price_by = kwargs.get('price_by', 'yearly')
+            instance_id = kwargs.get('instance_id')
+
+            if not plan_id:
+                return self._json_response(error="plan_id is required.")
+
+            plan = request.env['saas.plan'].sudo().browse(int(plan_id))
+            if not plan.exists():
+                return self._json_response(error="Plan not found.")
+
+            pricelist = request.env['product.pricelist'].sudo().search([('company_id', '=', partner.company_id.id)], limit=1)
+            if not pricelist:
+                pricelist = request.env['product.pricelist'].sudo().search([], limit=1)
+
+            checkout_vals = {
+                'plan_id': plan.id,
+                'subscription_type': price_by,
+                'pricelist': pricelist,
+                'partner': partner,
+            }
+
+            if instance_id:
+                # Upgrade/Downgrade flow
+                instance = request.env['saas.odoo.instance'].sudo().browse(int(instance_id))
+                if not instance.exists() or instance.partner_id.id != partner.id:
+                    return self._json_response(error="Instance not found or unauthorized.")
+                checkout_vals.update({
+                    'instance_id': instance.id,
+                    'sub_domain': instance.name,
+                    'domain_id': instance.based_domain_id.id,
+                })
+            else:
+                # New deployment
+                sub_domain = kwargs.get('sub_domain')
+                base_domain_id = kwargs.get('base_domain_id')
+                creation_mode = kwargs.get('creation_mode', 'scratch')
+                template_instance_id = kwargs.get('template_instance_id')
+
+                if not sub_domain:
+                    return self._json_response(error="sub_domain is required for new subscriptions.")
+                if not base_domain_id:
+                    return self._json_response(error="base_domain_id is required for new subscriptions.")
+
+                sub_domain = sub_domain.strip()
+                if not sub_domain.replace('-', '').isalnum():
+                    return self._json_response(error="Subdomain can only contain letters, numbers, and hyphens.")
+
+                base_domain = request.env['saas.based.domain'].sudo().browse(int(base_domain_id))
+                if not base_domain.exists():
+                    return self._json_response(error="Base domain not found.")
+
+                # Check domain availability
+                full_domain = f"{sub_domain}.{base_domain.name}"
+                existing = request.env['saas.odoo.instance'].sudo().search([
+                    ('domain_name', '=', full_domain)
+                ], limit=1)
+                if existing:
+                    return self._json_response(error=f"Domain {full_domain} is already taken.")
+
+                checkout_vals.update({
+                    'sub_domain': sub_domain,
+                    'domain_id': base_domain.id,
+                    'creation_mode': creation_mode,
+                    'template_instance_id': int(template_instance_id) if template_instance_id else False,
+                })
+
+            # Create sale order
+            website = request.env['website'].sudo().get_current_website() or request.env['website'].sudo().search([], limit=1)
+            order = website.create_saas_order(checkout_vals)
+            
+            return self._json_response(data={
+                'order_id': order.id,
+                'order_name': order.name,
+                'amount_total': order.amount_total,
+                'state': order.state,
+                'instance_id': order.instance_id.id if order.instance_id else False,
+            })
+
+        except AccessDenied as e:
+            return self._json_response(error=str(e))
+        except Exception as e:
+            _logger.exception("SaaS subscribe API error")
+            return self._json_response(error=str(e))

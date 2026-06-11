@@ -182,7 +182,7 @@
                                      </a>
                                  </div>
                                  <div class="mx-1 mb8" t-if="instance.state == 'deploy'">
-                                     <a class="btn btn-warning btn-block text-white" t-attf-href="/pricing-plans?instance_id={{instance.id}}">
+                                     <a class="btn btn-warning btn-block text-white" t-attf-href="/pricing?instance_id={{instance.id}}">
                                          <i class="fa fa-fw fa-exchange"/> Change Plan / Upgrade
                                      </a>
                                  </div>
