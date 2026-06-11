@@ -1,7 +1,7 @@
 {
     'name': 'Odoo SaaS Master',
-    'version': '19.0.0.3',
-    'author': 'SkyERP',
+    'version': '19.0.1.1',
+    'author': 'Havano ERP',
     'category': 'Odoo SaaS',
     'sequence': 15,
     'summary': 'Manage Odoo instance based on Docker',
@@ -78,5 +78,5 @@
     'application': True,
     'license': 'OPL-1',
     'price': 699,
-    'currency': 'EUR',
+    'currency': 'USD',
 }
