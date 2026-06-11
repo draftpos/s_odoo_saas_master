@@ -17,7 +17,7 @@ class Pricing(http.Controller):
     def _get_pricelist_context(self):
         pricelist_context = dict(request.env.context)
         if not pricelist_context.get('pricelist'):
-            pricelist = request.website._get_current_pricelist_sudo()
+            pricelist = request.website._get_and_cache_current_pricelist()
             pricelist_context['pricelist'] = pricelist.id
         else:
             pricelist = request.env['product.pricelist'].browse(pricelist_context['pricelist'])
@@ -146,7 +146,7 @@ class Pricing(http.Controller):
 
     @http.route(['/pricing/checkout'], type='http', methods=['POST'], auth="public", website=True)
     def checkout(self, **post):
-        pricelist = request.website._get_current_pricelist_sudo()
+        pricelist = request.website._get_and_cache_current_pricelist()
         num_users = int(post.pop('num_users', 1))
         subscription_type = post.pop('price_by', 'yearly')
         creation_mode = post.pop('creation_mode', 'scratch')
